@@ -1,0 +1,11 @@
+== Ejercicio 1 ==
+
+Test countVowels - Cuenta Vocales
+
+3 - mikasa
+2 - eren
+5 - murcielago
+0 - NULL
+
+Test createLettersQuantityArray - Crea un arreglo de Letras Cantidad
+
