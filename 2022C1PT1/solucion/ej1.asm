@@ -1,4 +1,5 @@
 extern malloc
+extern free
 extern strLen
 extern strClone
 extern strArrayGet
@@ -43,19 +44,20 @@ strArrayNew:
     mov byte[rax+SIZE_OFFSET], 0              ; Inicializamos size en 0
     mov byte [rax+CAPACITY_OFFSET], dil       ; inicializamos capacidad 
     
-    movzx rdi, byte[rbp-8] 
+    movzx rdi, dil 
     shl rdi, 3
     ;Puntero a puntero de capacity en rdi
     call malloc                               ; puntero rax para data
+    cmp rax, 0                                ; No hay memoria a signar?
+    je .fin                                 ; No hay, termina
 
-    cmp rax, 0
-    je .fin
     ; Inicializamos data
     mov rsi,[rbp-16]                          
     mov [rsi + DATA_OFFSET], rax
 
     ;Traemos el puntero de la nueva estructura
     mov rax, [rbp-16]
+
 .fin: 
     add rsp, 16
     pop rbp
