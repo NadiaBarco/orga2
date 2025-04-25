@@ -45,11 +45,11 @@ strArrayNew:
     mov byte [rax+CAPACITY_OFFSET], dil       ; inicializamos capacidad 
     
     movzx rdi, dil 
-    shl rdi, 3
-    ;Puntero a puntero de capacity en rdi
+    shl rdi, 38
+    ;Puntero de capacity*8 bytes en rdi
     call malloc                               ; puntero rax para data
-    cmp rax, 0                                ; No hay memoria a signar?
-    je .fin                                 ; No hay, termina
+    cmp rax, 0                                ; No hay memoria a asignar?
+    je .noHayMem                              ; No hay, libero y termino
 
     ; Inicializamos data
     mov rsi,[rbp-16]                          
@@ -57,6 +57,12 @@ strArrayNew:
 
     ;Traemos el puntero de la nueva estructura
     mov rax, [rbp-16]
+
+    .noHayMem:
+        mov rdi, [rbp-16]
+        call free
+        xor rax,rax
+        jmp .fin
 
 .fin: 
     add rsp, 16
@@ -70,9 +76,15 @@ strArrayGetSize:
     push rbp
     mov rbp,rsp
 
-    mov al, byte[rdi+SIZE_OFFSET]
+    cmp rdi,0
+    jnz .noEsNull
+    xor al, al 
+    jmp .fin
+    .noEsNull:
+        movzx rax, byte[rdi+SIZE_OFFSET]
+    
 
-    .fin:
+.fin:
     pop rbp
     ret
 
@@ -131,32 +143,44 @@ strArrayAddLast:
 ; void  strArraySwap(str_array_t* a, uint8_t i, uint8_t j)
 ; rdi = str_array_t* a
 ; sil= i
-;  cl= j
+; cl= j
 strArraySwap:
- ;   push rbp
- ;   mov rbp, rsp
- ;   sub rsp, 32
- ;   mov [rbp-24], rsi
- ;   mov [rbp-16], cl
- ;   mov [rbp-8], rdi
- ;   call strArrayGet                    ; en rax esta el punt. a string              
+    push rbp
+    mov rbp, rsp
+    sub rsp, 32
+    push r11
+    push r12
+    mov byte[rbp-24], cl
+    mov byte[rbp-16], sil
+    mov [rbp-8], rdi
     
- ;   mov [rbp-32], rax
+    ;Tomamos el i-esimo elemento, rdi= str_array_t *a y sil=i
+    call strArrayGet                                  
+    
+    mov [rbp-32], rax               ; en rax esta el punt.i a string
 
-    ; obtenemos el segundo punt
- ;   mov rdi, [rbp-8]
- ;   movzx rcx, byte[rbp-16]
+    ; Asumo que rdi esta en la pos. del elemento por como esta hecha la funcion strArrayGet
+    mov r11,rdi
+    ; Buscamos el j-esimo puntero
+    mov rdi, [rbp-8]
+    movzx rcx, byte[rbp-16]         
 
- ;   call strArrayGet                    ; obtenemos es segundo punt.
- ;   push rax
+    call strArrayGet                    ; obtenemos es segundo punt.
 
- ;   pop rax
+    mov r12, [rbp-32]
 
- ;   .fin:
- ;       pop rbp
+    mov [r11], rax
+
+    mov [rdi],r12
+    pop r12
+    pop r11
+    .fin:
+        pop rbp
         ret 
 
 ; void  strArrayDelete(str_array_t* a)
+;rdi= str_array_t* a
 strArrayDelete:
-
+    call free
+    
 
