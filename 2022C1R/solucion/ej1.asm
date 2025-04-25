@@ -70,13 +70,28 @@ countVowels:
 createLettersQuantityArray:
     push rbp
     mov rbp,rsp
- 
-    movzx rdi, dil 
-    mov rax, OFFSET_LETTERS_QUANTITY
-    mul rdi
-    mov rdi, rax
+    sub rsp,16
+    mov byte[rbp-8], dil
+
+    mov rdi, OFFSET_LETTERS_QUANTITY
+    shl rdi, 3
     call malloc 
 
+    mov [rbp-16], rax
+
+
+    ;Inicializamos letters_quantity_t
+    mov byte[rax + OFFSET_CONSONANTS_QTY], 0
+    mov byte[rax + OFFSET_VOWELS_QTY], 0 
+
+    ;Pedimos memoria para el puntero al string
+    movzx rdi, byte[rbp-8]
+    call malloc             ; rax=puntero al nuevo array
+
+    mov rdi, [rbp-16]
+    mov [rdi + OFFSET_WORD], rax
+
+    mov rax, [rbp-16]
     pop rbp
     ret
 

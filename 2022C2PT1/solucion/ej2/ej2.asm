@@ -35,7 +35,11 @@ filtro:
     pand xmm0, xmm2               ; xmm0= 0R3 0R2 0R1 0R0
     
     movdqa xmm2,[mask_l]
-    pand xmm1, xmm2               ; xmm1 = L30 L20 L10 L00      
+    pand xmm1, xmm2               ; xmm1 = L30 L20 L10 L00     
+
+    ; 0R3 0R2 0R1 0R0 0R3 0R2 0R1 0R0
+    
+    pblendw xmm1, xmm1, 0b
     .fin:
     add rsp,16
     pop rbp
