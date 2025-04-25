@@ -12,15 +12,15 @@ global strArrayDelete
 section .data
 SIZE_OFFSET EQU 0
 
-CAPACITY_OFFSET EQU 8 
+CAPACITY_OFFSET EQU 1 
 
-DATA_OFFSET EQU 16
-STR_ARRAY_OFFSET EQU 24  ;TOTAL TAMAÑO DE LA ESTRUCTURA
+DATA_OFFSET EQU 8
+STR_ARRAY_OFFSET EQU 16  ;TOTAL TAMAÑO DE LA ESTRUCTURA
 ;########### SECCION DE TEXTO (PROGRAMA)
 section .text
 
 ; str_array_t* strArrayNew(uint8_t capacity)
-;dil= uint8_t capacity
+; dil= uint8_t capacity
 strArrayNew:
     push rbp
     mov rbp, rsp
