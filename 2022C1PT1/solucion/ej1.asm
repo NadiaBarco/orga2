@@ -45,7 +45,7 @@ strArrayNew:
     mov byte [rax+CAPACITY_OFFSET], dil       ; inicializamos capacidad 
     
     movzx rdi, dil 
-    shl rdi, 38
+    shl rdi, 3
     ;Puntero de capacity*8 bytes en rdi
     call malloc                               ; puntero rax para data
     cmp rax, 0                                ; No hay memoria a asignar?
@@ -97,6 +97,7 @@ strArrayAddLast:
     sub rsp, 16
     mov [rbp-8], rdi                     ; guardo el puntero al struct
     mov [rbp-16], rsi                    ; guardo puntero al string *data
+
 
     ;YA ESTABA EN EL ARRAY DATA Y TRATABA DE ACCEDER A LOS OTROS ATRIBUTOS
     ;mov rdi, [rdi + DATA_OFFSET]         ; desrf. el puntero, estoy en strcut
@@ -181,6 +182,53 @@ strArraySwap:
 ; void  strArrayDelete(str_array_t* a)
 ;rdi= str_array_t* a
 strArrayDelete:
+    push rbp
+    mov rbp, rsp            ; stack frame armado
+    sub rsp, 16
+    push r11 
+    push r12
+    push r13
+    ;Lipiamos registros
+    xor r13, r13
+    xor r12,r12
+    xor r11, r11
+
+    mov [rbp-8], rdi
+    ;verificamos si el puntero ya es NULL
+    mov rsi, [rdi]
+    cmp rsi, 0
+    je .fin
+
+    ;Vamos a data y eliminamos el array de punteros 
+    movzx r11, byte[rdi + SIZE_OFFSET]   ; cant. de iteraciones
+    mov rdi, [rdi+DATA_OFFSET]           ; Obtenemos *data, el primer puntero al string
+    
+
+    ; r12= contador ^ r11= a->size
+    .ciclo:
+        cmp r12, r11                    ; Liberamos todos los elementos?
+        je .fin                         ; Sin elem, termino
+
+        call free
+
+        inc r12
+        add rdi, 8
+
+        jmp .ciclo
+
+    
+    ;Eliminamos la estructura
+    mov rdi, [rbp-8]
     call free
+
+    
+    pop r13
+    pop r12
+    pop r11
+ .fin:
+    add rsp, 16
+    pop rbp
+    ret
+
     
 
