@@ -1,4 +1,5 @@
 extern malloc
+extern strDelete
 extern free
 extern strLen
 extern strClone
@@ -57,7 +58,7 @@ strArrayNew:
 
     ;Traemos el puntero de la nueva estructura
     mov rax, [rbp-16]
-
+    jmp .fin
     .noHayMem:
         mov rdi, [rbp-16]
         call free
@@ -209,7 +210,7 @@ strArrayDelete:
         cmp r12, r11                    ; Liberamos todos los elementos?
         je .fin                         ; Sin elem, termino
 
-        call free
+        call strDelete
 
         inc r12
         add rdi, 8
