@@ -59,6 +59,7 @@ strArrayNew:
     ;Traemos el puntero de la nueva estructura
     mov rax, [rbp-16]
     jmp .fin
+    
     .noHayMem:
         mov rdi, [rbp-16]
         call free
@@ -96,14 +97,19 @@ strArrayAddLast:
     push rbp
     mov rbp,rsp                          ; stack frame armado
     sub rsp, 16
+    push r12
     mov [rbp-8], rdi                     ; guardo el puntero al struct
     mov [rbp-16], rsi                    ; guardo puntero al string *data
-
+    xor r12,r12
 
     ;YA ESTABA EN EL ARRAY DATA Y TRATABA DE ACCEDER A LOS OTROS ATRIBUTOS
     ;mov rdi, [rdi + DATA_OFFSET]         ; desrf. el puntero, estoy en strcut
     
-    
+    ;rdi no es un puntero vacio?
+    mov rcx,[rdi]
+    cmp rcx, 0
+    je .fin
+
     xor rcx,rcx
     
     ;Verificamos si hay capacidad
@@ -124,18 +130,20 @@ strArrayAddLast:
         
         shl rsi, 3                             
         add rdi, rsi                          ; Posicion del nuevo string
-        mov rcx, rdi                 
+
+        mov r12, rdi                 
 
         mov rdi, [rbp-16]
         call strClone           ;se clona el string, en rax tengo el punt. al string clonado
 
-        mov [rcx], rax
+        mov [r12], rax
 
         ;Incremento size 
         mov rdi,[rbp-8]             
         add byte[rdi+SIZE_OFFSET], 1
-
+        
     .fin:
+    pop r12
     add rsp,16
     pop rbp
     ret

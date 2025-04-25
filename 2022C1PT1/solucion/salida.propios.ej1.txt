@@ -3,3 +3,24 @@
 Agregar
 
 0 - []
+1 - [Mikasa]
+2 - [Mikasa,Eren]
+3 - [Mikasa,Eren,Levi]
+
+Get
+
+3 - [Mikasa,Eren,Levi]
+Mikasa
+Eren
+Levi
+(null)
+
+Quitar
+
+2 - [Eren,Levi] - Mikasa
+1 - [Eren] - Levi
+0 - [] - Eren
+
+Swap
+
+3 - [Mikasa,Eren,Levi]
