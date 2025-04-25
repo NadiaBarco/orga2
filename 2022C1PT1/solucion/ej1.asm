@@ -32,7 +32,8 @@ strArrayNew:
     mov rdi, STR_ARRAY_OFFSET                 ; Tamaño de la estructura str_array
     
     call malloc                               ;tenemos el puntero de la nueva struc en rax
-
+    cmp rax, 0 
+    je .fin
 
     mov [rbp-16], rax                         ; guardamos el puntero a la struct
 
@@ -47,6 +48,8 @@ strArrayNew:
     ;Puntero a puntero de capacity en rdi
     call malloc                               ; puntero rax para data
 
+    cmp rax, 0
+    je .fin
     ; Inicializamos data
     mov rsi,[rbp-16]                          
     mov [rsi + DATA_OFFSET], rax
@@ -88,7 +91,6 @@ strArrayAddLast:
     xor rcx,rcx
     
     ;Verificamos si hay capacidad
-
     movzx rsi, byte[rdi+SIZE_OFFSET]       ; obtenemos size 
     movzx rcx, byte[rdi + CAPACITY_OFFSET]  ; rcx=obtenemos la capacidad total        
     
@@ -96,34 +98,26 @@ strArrayAddLast:
     cmp rcx, rsi                           ; Hay capacidad?
     jle .fin                              ; Si no capacidad, termina
 
+
     ;Vamos al final disponible
-    .ciclo:
-        cmp rsi,0
-        je .Add_array
 
-        ; No llegamos a un puntero disponible, sigo
-        dec rsi 
-        add rdi,8           
-        jmp .ciclo
-    
+   ;Agregamos el puntero al array
+    .Add_array:
+        mov rdi, [rbp-8]
+        mov rdi, [rdi+DATA_OFFSET]            ; rdi= **data
+        
+        shl rsi, 3                             
+        add rdi, rsi                          ; Posicion del nuevo string
+        mov rcx, rdi                 
 
-    ;Agregamos el puntero al array
-    .Add_array:                     
-        mov rsi,[rbp-16]         ; Traemos el puntero del string data
-        push r12 
-        mov r12, rdi             ;r12= direccion donde almaceno el nuevo string
-
-        mov rdi, rsi
+        mov rdi, [rbp-16]
         call strClone           ;se clona el string, en rax tengo el punt. al string clonado
 
-        mov [r12], rax
+        mov [rcx], rax
 
-        pop r12
-
-    
-    ;Incremento size 
-    mov rdi,[rbp-8]             
-    add byte[rdi+SIZE_OFFSET], 1
+        ;Incremento size 
+        mov rdi,[rbp-8]             
+        add byte[rdi+SIZE_OFFSET], 1
 
     .fin:
     add rsp,16
