@@ -114,7 +114,7 @@ createLettersQuantityArray:
 getMaxVowels:
     push rbp
     mov rbp,rsp
-
+    sub rsp,16
     push r11
     push r12
 
@@ -123,12 +123,12 @@ getMaxVowels:
 
     movzx r9, sil 
 
-    mov r11, [rdi]          ; r11= estoy en el struc
+    mov r11, rdi          ; r11= estoy en el struc
     cmp r11, 0              ;Es un puntero nulo?
     je .fin                 ; Si lo es no hago nada
     
-
-    add r11, OFFSET_VOWELS_QTY ; accedemos al vowels_qty
+    mov [rbp-8],rdi
+    add r11, [r11+OFFSET_VOWELS_QTY] ; accedemos al vowels_qty
     
     ;Tomamos el prox elem a comparar
     add rdi, OFFSET_LETTERS_QUANTITY
@@ -140,8 +140,9 @@ getMaxVowels:
         je .fin 
 
         cmp r11, r12
-        jl .esMenor
+        jle .esMenor
 
+        ;mov [rbp-8], rdi     ;Puntero a la estructura
         add rdi, OFFSET_LETTERS_QUANTITY
         movzx r12, byte[rdi + OFFSET_VOWELS_QTY]
         dec r9
@@ -150,12 +151,15 @@ getMaxVowels:
         .esMenor:
             mov r11,r12
             dec r9
-            add rdi, OFFSET_LETTERS_QUANTITY
+            ;add rdi, OFFSET_LETTERS_QUANTITY
+            mov [rbp-8], rdi
             movzx r12, byte[rdi + OFFSET_VOWELS_QTY]
             jmp .ciclo
 
 
  .fin:
+    mov rax, [rbp-8]
+    add rsp,16
     pop r12
     pop r11
     pop rbp
