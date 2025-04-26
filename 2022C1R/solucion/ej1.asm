@@ -72,45 +72,91 @@ createLettersQuantityArray:
     mov rbp,rsp
     sub rsp,16
     mov byte[rbp-8], dil
+    push r12
 
-    mov rdi, OFFSET_LETTERS_QUANTITY
-    
+    movzx r12, dil
+    mov rax, OFFSET_LETTERS_QUANTITY
+    mul dil
+    mov rdi, rax
 
     call malloc 
     cmp rax, 0          ;hay memoria?
     je .fin             ; No hay memoria, termina
     
-    ; Inicializamo la estructura letters_quantity_t
-    mov [rbp-16], rax
-    mov byte[rax + OFFSET_CONSONANTS_QTY], 0
-    mov byte[rax + OFFSET_VOWELS_QTY], 0 
+    
+    mov [rbp-16], rax        ;Guardamos el puntero al array
 
-    ;Pedimos memoria para el puntero al string
-    movzx rdi, byte[rbp-8]
-    shl rdi, 3
-    call malloc             ; rax=puntero al nuevo array
-    cmp rax, 0
-    je .falloMalloc
+    .ciclo:
+        cmp r12, 0      ;Inicializamos todas las structs?
+        je  .fin            ; Si, termina
 
-    ;Guardamos el puntero del string
-    mov rdi, [rbp-16]
-    mov [rdi + OFFSET_WORD], rax
+        ; Inicializamos letters_quantity_t
+        mov byte[rax + OFFSET_CONSONANTS_QTY], 0
+        mov qword[rax + OFFSET_WORD],0
+        mov byte[rax + OFFSET_VOWELS_QTY], 0 
 
-    mov rax, [rbp-16]
-
-    jmp .fin
+        ; Vamo a la siguiente posiscion 
+        add rax, OFFSET_LETTERS_QUANTITY
+        dec r12
+        jmp .ciclo
 
 
-        .falloMalloc:
-            mov rdi, [rbp-16]
-            call free
-            xor rax,rax
-            jmp .fin
     .fin:
+        mov rax, [rbp-16]
+        pop r12
         add rsp, 16
         pop rbp
         ret
 
 ; char* getMaxVowels(letters_quantity_t* wq_array, uint8_t array_size);
+;rdi= *wq_array
+;sil = array_size
 getMaxVowels:
-    ; COMPLETAR
+    push rbp
+    mov rbp,rsp
+
+    push r11
+    push r12
+
+    xor r12,r12
+    xor r11,r11
+
+    movzx r9, sil 
+
+    mov r11, [rdi]          ; r11= estoy en el struc
+    cmp r11, 0              ;Es un puntero nulo?
+    je .fin                 ; Si lo es no hago nada
+    
+
+    add r11, OFFSET_VOWELS_QTY ; accedemos al vowels_qty
+    
+    ;Tomamos el prox elem a comparar
+    add rdi, OFFSET_LETTERS_QUANTITY
+    mov r12, [rdi + OFFSET_VOWELS_QTY]
+
+    sub r9,2
+    .ciclo:
+        cmp r9, 0           ;Llegue al final de arreglo?
+        je .fin 
+
+        cmp r11, r12
+        jl .esMenor
+
+        add rdi, OFFSET_LETTERS_QUANTITY
+        movzx r12, byte[rdi + OFFSET_VOWELS_QTY]
+        dec r9
+        jmp .ciclo
+
+        .esMenor:
+            mov r11,r12
+            dec r9
+            add rdi, OFFSET_LETTERS_QUANTITY
+            movzx r12, byte[rdi + OFFSET_VOWELS_QTY]
+            jmp .ciclo
+
+
+ .fin:
+    pop r12
+    pop r11
+    pop rbp
+    
