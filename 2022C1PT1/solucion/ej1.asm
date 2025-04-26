@@ -105,7 +105,7 @@ strArrayAddLast:
     ;YA ESTABA EN EL ARRAY DATA Y TRATABA DE ACCEDER A LOS OTROS ATRIBUTOS
     ;mov rdi, [rdi + DATA_OFFSET]         ; desrf. el puntero, estoy en strcut
     
-    ;rdi no es un puntero vacio?
+    ;rdi es un puntero vacio?
     mov rcx,[rdi]
     cmp rcx, 0
     je .fin
@@ -126,10 +126,10 @@ strArrayAddLast:
    ;Agregamos el puntero al array
     .Add_array:
         mov rdi, [rbp-8]
-        mov rdi, [rdi+DATA_OFFSET]            ; rdi= **data
+        mov rdi, [rdi+DATA_OFFSET]    ; rdi= **data
         
         shl rsi, 3                             
-        add rdi, rsi                          ; Posicion del nuevo string
+        add rdi, rsi                  ; Posicion del nuevo string
 
         mov r12, rdi                 
 
@@ -153,46 +153,76 @@ strArrayAddLast:
 ; void  strArraySwap(str_array_t* a, uint8_t i, uint8_t j)
 ; rdi = str_array_t* a
 ; sil= i
-; cl= j
+; dl= j
 strArraySwap:
     push rbp
     mov rbp, rsp
     sub rsp, 32
-    push r11
-    push r12
-    mov byte[rbp-24], cl
-    mov byte[rbp-16], sil
+
     mov [rbp-8], rdi
     
+    push r11
+    push r12
+
+    ; Verfico si las pos. estan fuera de rango
+    mov cl, byte[rdi + SIZE_OFFSET]     ; cl = size
+    cmp cl, sil                         ; size < i ? 
+    jle .fin                            ; el i-esimo elem. esta fuera de rango, termina
+
+    cmp cl, dl                          ; size < j?
+    jle .fin                            ;el j-esimo elem. esta fuera de rango, termina
+
+    ; Si son iguales?
+    cmp dl, sil                         
+    je .fin                            ; No hago nada, termina
+
+    movzx r8, dl                    ; j
+    movzx r9, sil                   ; i
     ;Tomamos el i-esimo elemento, rdi= str_array_t *a y sil=i
     call strArrayGet                                  
     
-    mov [rbp-32], rax               ; en rax esta el punt.i a string
+    mov [rbp-16], rax               ; en rax esta el punt.i a string
 
-    ; Asumo que rdi esta en la pos. del elemento por como esta hecha la funcion strArrayGet
-    mov r11,rdi
     ; Buscamos el j-esimo puntero
     mov rdi, [rbp-8]
-    movzx rcx, byte[rbp-16]         
+    mov rsi, r8       
 
-    call strArrayGet                    ; obtenemos es segundo punt.
+    call strArrayGet                ; obtenemos es segundo punt.
+    mov [rbp-24], rax               ; guardamos el j-esimo elemento
 
-    mov r12, [rbp-32]
+    ;Calculamos desplazamientos para i y j
+    mov rdi, [rbp-8]                ; Puntero a la struct
+    mov r12, [rdi + DATA_OFFSET]    ; rdi = puntero a data / pos 0
+    mov r11, r12
 
+    ; Direccion de i
+    mov rsi, r9
+    shl rsi, 3
+    add r12, rsi
+
+    mov rcx, r8
+    shl rcx, 3
+    add r11, rcx
+
+    ; swap
+    mov rax, [rbp-16]
     mov [r11], rax
 
-    mov [rdi],r12
+    mov rax,[rbp-24]
+    mov [r12], rax
+
+ .fin:
     pop r12
     pop r11
-    .fin:
-        pop rbp
-        ret 
+    add rsp, 32
+    pop rbp
+    ret 
 
 ; void  strArrayDelete(str_array_t* a)
 ;rdi= str_array_t* a
 strArrayDelete:
     push rbp
-    mov rbp, rsp            ; stack frame armado
+    mov rbp, rsp     ; stack frame armado
     sub rsp, 16
     push r11 
     push r12
