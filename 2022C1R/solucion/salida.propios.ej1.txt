@@ -9,3 +9,4 @@ Test countVowels - Cuenta Vocales
 
 Test createLettersQuantityArray - Crea un arreglo de Letras Cantidad
 
+[consonats: 3 - word: mikasa - vowels: 3]

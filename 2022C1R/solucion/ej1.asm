@@ -74,26 +74,42 @@ createLettersQuantityArray:
     mov byte[rbp-8], dil
 
     mov rdi, OFFSET_LETTERS_QUANTITY
-    shl rdi, 3
+    
+
     call malloc 
-
+    cmp rax, 0          ;hay memoria?
+    je .fin             ; No hay memoria, termina
+    
+    ; Inicializamo la estructura letters_quantity_t
     mov [rbp-16], rax
-
-
-    ;Inicializamos letters_quantity_t
     mov byte[rax + OFFSET_CONSONANTS_QTY], 0
     mov byte[rax + OFFSET_VOWELS_QTY], 0 
 
     ;Pedimos memoria para el puntero al string
     movzx rdi, byte[rbp-8]
+    shl rdi, 3
     call malloc             ; rax=puntero al nuevo array
+    cmp rax, 0
+    je .falloMalloc
 
+    ;Guardamos el puntero del string
     mov rdi, [rbp-16]
     mov [rdi + OFFSET_WORD], rax
 
     mov rax, [rbp-16]
-    pop rbp
-    ret
+
+    jmp .fin
+
+
+        .falloMalloc:
+            mov rdi, [rbp-16]
+            call free
+            xor rax,rax
+            jmp .fin
+    .fin:
+        add rsp, 16
+        pop rbp
+        ret
 
 ; char* getMaxVowels(letters_quantity_t* wq_array, uint8_t array_size);
 getMaxVowels:
