@@ -143,7 +143,7 @@ getMaxVowels:
         cmp r11, r12
         jle .esMenor
 
-        ;mov [rbp-8], rdi     ;Puntero a la estructura
+        ;Puntero a la estructura
         add rdi, 8
         movzx r12, byte[rdi + OFFSET_VOWELS_QTY]
         dec r9
@@ -152,15 +152,21 @@ getMaxVowels:
         .esMenor:
             mov r11,r12
             dec r9
-            ;add rdi, OFFSET_LETTERS_QUANTITY
+            
             mov [rbp-8], rdi
+
+            mov  rcx,[rdi]
+            cmp rcx, 0
+            je .fin
+
+            add rdi, 8
             movzx r12, byte[rdi + OFFSET_VOWELS_QTY]
             jmp .ciclo
 
 
  .fin:
     mov rdi, [rbp-8]
-    mov rax, [rdi + OFFSET_VOWELS_QTY]
+    mov rax, [rdi + OFFSET_WORD]
     add rsp,16
     pop r12
     pop r11
