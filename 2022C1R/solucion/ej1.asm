@@ -124,18 +124,18 @@ getMaxVowels:
     movzx r9, sil 
 
     ; Chequeamos que no sea un puntero null
-    mov r11, [rdi]          ; r11= estoy en el struc
-    cmp r11, 0              ;Es un puntero nulo?
+    
+    cmp rdi, 0              ;Es un puntero nulo?
     je .fin                 ; Si lo es, no hago nada
     
     mov [rbp-8],rdi
     movzx r11, byte[rdi+OFFSET_VOWELS_QTY] ; accedemos al vowels_qty
     
     ;Tomamos el prox elem a comparar
-    add rdi, 8
+    add rdi, OFFSET_LETTERS_QUANTITY
     movzx r12, byte[rdi + OFFSET_VOWELS_QTY]
 
-    sub r9,2
+    sub r9,1
     .ciclo:
         cmp r9, 0           ;Llegue al final de arreglo?
         je .fin 
@@ -144,7 +144,7 @@ getMaxVowels:
         jle .esMenor
 
         ;Puntero a la estructura
-        add rdi, 8
+        add rdi, OFFSET_LETTERS_QUANTITY
         movzx r12, byte[rdi + OFFSET_VOWELS_QTY]
         dec r9
         jmp .ciclo
@@ -155,11 +155,9 @@ getMaxVowels:
             
             mov [rbp-8], rdi
 
-            mov  rcx,[rdi]
-            cmp rcx, 0
-            je .fin
 
-            add rdi, 8
+
+            add rdi, OFFSET_LETTERS_QUANTITY
             movzx r12, byte[rdi + OFFSET_VOWELS_QTY]
             jmp .ciclo
 
@@ -167,6 +165,7 @@ getMaxVowels:
  .fin:
     mov rdi, [rbp-8]
     mov rax, [rdi + OFFSET_WORD]
+
     add rsp,16
     pop r12
     pop r11
