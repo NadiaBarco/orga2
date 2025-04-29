@@ -161,7 +161,7 @@ strArraySwap:
 
     mov [rbp-8], rdi
     
-    push r11
+    push r13
     push r12
 
     ; Verfico si las pos. estan fuera de rango
@@ -193,7 +193,7 @@ strArraySwap:
     ;Calculamos desplazamientos para i y j
     mov rdi, [rbp-8]                ; Puntero a la struct
     mov r12, [rdi + DATA_OFFSET]    ; rdi = puntero a data / pos 0
-    mov r11, r12
+    mov r13, r12
 
     ; Direccion de i
     mov rsi, r9
@@ -202,18 +202,18 @@ strArraySwap:
 
     mov rcx, r8
     shl rcx, 3
-    add r11, rcx
+    add r13, rcx
 
     ; swap
     mov rax, [rbp-16]
-    mov [r11], rax
+    mov [r13], rax
 
     mov rax,[rbp-24]
     mov [r12], rax
 
  .fin:
     pop r12
-    pop r11
+    pop r13
     add rsp, 32
     pop rbp
     ret 
@@ -224,13 +224,14 @@ strArrayDelete:
     push rbp
     mov rbp, rsp     ; stack frame armado
     sub rsp, 16
-    push r11 
+    push r14
     push r12
     push r13
+    push r15
     ;Lipiamos registros
     xor r13, r13
     xor r12,r12
-    xor r11, r11
+    xor r13, r13
 
     mov [rbp-8], rdi
     ;verificamos si el puntero ya es NULL
@@ -239,19 +240,19 @@ strArrayDelete:
     je .fin
 
     ;Vamos a data y eliminamos el array de punteros 
-    movzx r11, byte[rdi + SIZE_OFFSET]   ; cant. de iteraciones
+    movzx r13, byte[rdi + SIZE_OFFSET]   ; cant. de iteraciones
     mov rdi, [rdi+DATA_OFFSET]           ; Obtenemos *data, el primer puntero al string
-    
+    mov r15, rdi
 
-    ; r12= contador ^ r11= a->size
+    ; r12= contador ^ r13= a->size
     .ciclo:
-        cmp r12, r11                    ; Liberamos todos los elementos?
+        cmp r12, r14                   ; Liberamos todos los elementos?
         je .fin                         ; Sin elem, termino
 
         call strDelete
 
         inc r12
-        add rdi, 8
+        add r15, 8
 
         jmp .ciclo
 
@@ -261,10 +262,12 @@ strArrayDelete:
     call free
 
     
+    
+ .fin:
+    pop r15
     pop r13
     pop r12
-    pop r11
- .fin:
+    pop r13
     add rsp, 16
     pop rbp
     ret
