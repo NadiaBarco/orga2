@@ -16,7 +16,7 @@ templosClasicos:
     mov rbp, rsp
     push r13
     push r12    ;r12=contador 
-    push r11    ; 
+    push r11    ; r11 puntero al nuevo array
     push r14
     push r15
     
@@ -47,8 +47,9 @@ templosClasicos:
         cmp r13, r14
         jne .siguiente
 
+        ; Agrego el templo clasico
         
-
+        
          
 
 
@@ -88,7 +89,7 @@ mov rbx, rdi
 
     ; llegamos al final de la lista?
     cmp rsi, 0      
-    jmp .fin
+    je .fin
 
     ;verifico que sea un templo clasico
     movzx r12, byte[rbx + OFFSET_COLUMN_CORTO]    ; cargo N columna corta
@@ -112,6 +113,7 @@ mov rbx, rdi
         jmp .ciclo 
 
 .fin:
+    add rsp,8
     pop rbx
     pop r13
     pop r12
