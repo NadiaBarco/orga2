@@ -1,0 +1,42 @@
+##EL TAMAÑO FINAL DE UNA ESTRUCTURA TIENE QUE SER MULTIPLO DE EL DATO DE MAYOR ALINEACION ESTRICTO 
+
+EJEMPLOS DE OFFSETS CORRECTOS
+// Ejemplo 1: Mayor alineación = 4 bytes
+struct ejemplo1 {
+    int a;     // 4 bytes, alineado a 4
+    char b;    // 1 byte
+    // 3 bytes de padding
+};
+// Tamaño total: 8 bytes (múltiplo de 4)
+
+// Ejemplo 2: Mayor alineación = 2 bytes  
+struct ejemplo2 {
+    short a;   // 2 bytes, alineado a 2
+    char b;    // 1 byte
+    // 1 byte de padding
+};
+// Tamaño total: 4 bytes (múltiplo de 2)
+
+// Ejemplo 3: Mayor alineación = 8 bytes
+struct ejemplo3 {
+    double a;  // 8 bytes, alineado a 8
+    char b;    // 1 byte
+    // 7 bytes de padding
+};
+// Tamaño total: 16 bytes (múltiplo de 8)
+
+// Ejemplo 4: Mayor alineación = 1 byte
+struct ejemplo4 {
+    char a;    // 1 byte
+    char b;    // 1 byte
+};
+// Tamaño total: 2 bytes (sin necesidad de redondear)
+
+
+
+como difer3encio entre un puntero a un array donde cada elemento es un puntero a un string 
+y  entre un puntero a un array y cada elemento es una estructura?
+Por la definición del tipo:
+
+char** o tipo** → array de punteros
+tipo* donde tipo es una estructura → array de estructuras
