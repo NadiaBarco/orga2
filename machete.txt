@@ -39,4 +39,11 @@ y  entre un puntero a un array y cada elemento es una estructura?
 Por la definición del tipo:
 
 char** o tipo** → array de punteros
+<<<<<<< HEAD
 tipo* donde tipo es una estructura → array de estructuras
+=======
+tipo* donde tipo es una estructura → array de estructuras
+
+
+para ver info dentro de x/gd $rbx+16 con rbx tiene una direccion
+>>>>>>> ad0594d4ed6287984501213702a16496a8ec3b2b
