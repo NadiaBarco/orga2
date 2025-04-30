@@ -98,6 +98,7 @@ strArrayAddLast:
     mov rbp,rsp                          ; stack frame armado
     sub rsp, 16
     push r12
+    push r13
     mov [rbp-8], rdi                     ; guardo el puntero al struct
     mov [rbp-16], rsi                    ; guardo puntero al string *data
     xor r12,r12
@@ -141,8 +142,9 @@ strArrayAddLast:
         ;Incremento size 
         mov rdi,[rbp-8]             
         add byte[rdi+SIZE_OFFSET], 1
-        
+
     .fin:
+    pop r13
     pop r12
     add rsp,16
     pop rbp
@@ -163,6 +165,7 @@ strArraySwap:
     
     push r13
     push r12
+    push r11
 
     ; Verfico si las pos. estan fuera de rango
     mov cl, byte[rdi + SIZE_OFFSET]     ; cl = size
@@ -212,6 +215,7 @@ strArraySwap:
     mov [r12], rax
 
  .fin:
+    pop r11
     pop r12
     pop r13
     add rsp, 32
@@ -223,54 +227,55 @@ strArraySwap:
 strArrayDelete:
     push rbp
     mov rbp, rsp     ; stack frame armado
-    sub rsp, 16
     push r14
     push r12
     push r13
     push r15
+    sub rsp, 16
     ;Lipiamos registros
     xor r13, r13
     xor r12,r12
     xor r13, r13
 
-    mov [rbp-8], rdi
+    mov r12, rdi
+    mov r14, rdi
     ;verificamos si el puntero ya es NULL
-    mov rsi, [rdi]
-    cmp rsi, 0
+    cmp r12, 0
     je .fin
 
     ;Vamos a data y eliminamos el array de punteros 
-    movzx r13, byte[rdi + SIZE_OFFSET]   ; cant. de iteraciones
-    mov rdi, [rdi+DATA_OFFSET]           ; Obtenemos *data, el primer puntero al string
-    mov r15, rdi
-
-    ; r12= contador ^ r13= a->size
+    movzx r13, byte[r12 + SIZE_OFFSET]   ; cant. de iteraciones
+    mov r15, [r12+DATA_OFFSET]           ; Obtenemos **data, el puntero al string
+    mov [rbp-16], r15                    ; Puntero a **data, r15=direccion del array
+    
+    ;elimino cada string
+    ;  r13= a->size
     .ciclo:
-        cmp r12, r14                   ; Liberamos todos los elementos?
-        je .fin                         ; Sin elem, termino
-
+        cmp r13, 0               ; Liberamos todos los elementos?
+        je .fin_estructura       ; Sin elementos? termino
+        mov rdi, [r15]           ; Puntero al string, r15= puntero al string
         call strDelete
 
-        inc r12
-        add r15, 8
+        dec r13
+        add r15, 8              ; Vamos al proximo puntero que apunta al string
 
         jmp .ciclo
-
+    
     
     ;Eliminamos la estructura
-    mov rdi, [rbp-8]
-    call free
+    .fin_estructura:
+        mov rdi, [rbp-16]
+        call free
+        mov rdi, r14
+        call free
 
     
     
  .fin:
+    add rsp,16
     pop r15
     pop r13
     pop r12
-    pop r13
-    add rsp, 16
+    pop r14
     pop rbp
     ret
-
-    
-
