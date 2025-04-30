@@ -20,23 +20,25 @@ templosClasicos:
     push r14    
     push r15
     push rbx    ; Puntero al array de templos
+    sub rsp, 16
 
-    mov rbx, rdi
-    mov rcx, rsi
+    
+
+    mov rbx, rdi                    ;rbx= puntero a temploArr
+    ;mov rcx, rsi                    ; rcx = tamaño de temploArr
     call cuantosTemplosClasicos     ; rax = cant de templos clasicos
     ;Armamos el tamaño de nuevo array de templos_clasicos
-    mov r9d,eax
+    mov r12d,eax
     mov r8d, OFFSET_TEMPLO    
     ; multiplicamos por el tamaño de la estructura
     mul r8d
     
     mov rdi, rax
     call malloc             ; Tenemos el puntero al nuevo array 
-    mov r12, rax
     mov r11,rax             ; r11 =puntero al nuevo array 
-
+    mov [rbp-8],rax
     .ciclo:
-        cmp r9d, 0         ; Quedan templos por recorrer?
+        cmp r12d, 0         ; Quedan templos por recorrer?
         je .fin
 
         movzx r13, byte[rbx + OFFSET_COLUMN_CORTO]
@@ -57,30 +59,44 @@ templosClasicos:
 
         ; Reservamos memoria para el nombre    
         mov rdi, [rbx + OFFSET_NOMBRE]         ; rdi= puntero a char a clonar
+        
+        
+        cmp rdi, 0 
+        je .strVacio
+        
         call strClone                         ; rax = puntero al string 
-
+        
         mov [r11 + OFFSET_NOMBRE], rax
 
         ;Vamos al siguiente templo
 
         add r11, OFFSET_TEMPLO
         add rbx, OFFSET_TEMPLO
-        dec r9d
+        dec r12d
         jmp .ciclo
 
         .siguiente:
-            add r11, OFFSET_TEMPLO
             add rbx, OFFSET_TEMPLO
-
-            mov rdi, rbx
-            cmp rdi, 0 
+            cmp rbx, 0 
             je .fin
 
-            dec r9d
+            jmp .ciclo
+        
+        .strVacio:
+            ; No hay string, ponemos NULL
+            mov qword[r11 + OFFSET_NOMBRE], 0
+            ;Vamos al siguiente templo
+            add r11, OFFSET_TEMPLO
+            add rbx, OFFSET_TEMPLO
+            dec r12d
+
             jmp .ciclo
 
+
+
  .fin:
-    mov rax, r12
+    mov rax, [rbp-8]
+    add rsp,16
     pop rbx
     pop r15
     pop r14
