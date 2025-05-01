@@ -129,38 +129,37 @@ getMaxVowels:
     mov r14, rdi
     movzx r13, byte[r14+OFFSET_VOWELS_QTY] ; accedemos al vowels_qty
     mov r15, [r14 + OFFSET_WORD]           ; Guardamos el puntero a word
-    ;Tomamos el prox elem a comparar
-    add r14, OFFSET_LETTERS_QUANTITY
-    movzx r12, byte[r14 + OFFSET_VOWELS_QTY]
-
     sub r9,1
     .ciclo:
         cmp r9, 0           ;Llegue al final de arreglo?
-        je .fin 
+        je .copia_string 
 
-        cmp r13, r12
-        jle .esMenor
-
-        ;Puntero a la estructura
+        ;Tomamos el prox elem a comparar
         add r14, OFFSET_LETTERS_QUANTITY
         movzx r12, byte[r14 + OFFSET_VOWELS_QTY]
-        dec r9
+
+        ; max_vowels > wq_array[r14].vowels_qty
+        cmp r13, r12
+        jge .siguiente
+
+        mov r13,r12         ; r13 = con mayor consonantes
+        dec r9              ; r9= len(array) - 1
+            
+        mov r15, r14        ; reemplazo la dirr por la estructura mayor
+
         jmp .ciclo
 
-        .esMenor:
-            mov r13,r12
+        .siguiente:
             dec r9
-            
-            mov r15, r14
-
-            add r14, OFFSET_LETTERS_QUANTITY
-            movzx r12, byte[rdi + OFFSET_VOWELS_QTY]
             jmp .ciclo
 
 
- .fin:
-    mov rax, [r15 + OFFSET_WORD]
 
+
+        .copia_string:
+            mov rdi, [r15 + OFFSET_WORD]
+            call strClone
+ .fin:
     pop r12
     pop r13
     pop r14
