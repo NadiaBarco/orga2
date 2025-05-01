@@ -71,8 +71,8 @@ createLettersQuantityArray:
     push rbp
     mov rbp,rsp
     sub rsp,16
-
     push r12
+    push r13
 
     movzx r12, dil
     mov rax, OFFSET_LETTERS_QUANTITY
@@ -80,8 +80,8 @@ createLettersQuantityArray:
     mov rdi, rax
 
     call malloc 
-    cmp rax, 0          ;hay memoria?
-    je .fin             ; No hay memoria, termina
+    ;cmp rax, 0          ;hay memoria?
+    ;je .fin             ; No hay memoria, termina
     
     
     mov [rbp-16], rax        ;Guardamos el puntero al array
@@ -103,6 +103,7 @@ createLettersQuantityArray:
 
  .fin:
     mov rax, [rbp-16]
+    pop r13
     pop r12
     add rsp, 16
     pop rbp
@@ -114,61 +115,56 @@ createLettersQuantityArray:
 getMaxVowels:
     push rbp
     mov rbp,rsp
-    sub rsp,16
-    push r11
+    push r15
+    push r14
+    push r13
     push r12
-
-    xor r12,r12
-    xor r11,r11
 
     movzx r9, sil 
 
     ; Chequeamos que no sea un puntero null
-    
     cmp rdi, 0              ;Es un puntero nulo?
     je .fin                 ; Si lo es, no hago nada
     
-    mov [rbp-8],rdi
-    movzx r11, byte[rdi+OFFSET_VOWELS_QTY] ; accedemos al vowels_qty
-    
+    mov r14, rdi
+    movzx r13, byte[r14+OFFSET_VOWELS_QTY] ; accedemos al vowels_qty
+    mov r15, [r14 + OFFSET_WORD]           ; Guardamos el puntero a word
     ;Tomamos el prox elem a comparar
-    add rdi, OFFSET_LETTERS_QUANTITY
-    movzx r12, byte[rdi + OFFSET_VOWELS_QTY]
+    add r14, OFFSET_LETTERS_QUANTITY
+    movzx r12, byte[r14 + OFFSET_VOWELS_QTY]
 
     sub r9,1
     .ciclo:
         cmp r9, 0           ;Llegue al final de arreglo?
         je .fin 
 
-        cmp r11, r12
+        cmp r13, r12
         jle .esMenor
 
         ;Puntero a la estructura
-        add rdi, OFFSET_LETTERS_QUANTITY
-        movzx r12, byte[rdi + OFFSET_VOWELS_QTY]
+        add r14, OFFSET_LETTERS_QUANTITY
+        movzx r12, byte[r14 + OFFSET_VOWELS_QTY]
         dec r9
         jmp .ciclo
 
         .esMenor:
-            mov r11,r12
+            mov r13,r12
             dec r9
             
-            mov [rbp-8], rdi
+            mov r15, r14
 
-
-
-            add rdi, OFFSET_LETTERS_QUANTITY
+            add r14, OFFSET_LETTERS_QUANTITY
             movzx r12, byte[rdi + OFFSET_VOWELS_QTY]
             jmp .ciclo
 
 
  .fin:
-    mov rdi, [rbp-8]
-    mov rax, [rdi + OFFSET_WORD]
+    mov rax, [r15 + OFFSET_WORD]
 
-    add rsp,16
     pop r12
-    pop r11
+    pop r13
+    pop r14
+    pop r15
     pop rbp
     ret
     
