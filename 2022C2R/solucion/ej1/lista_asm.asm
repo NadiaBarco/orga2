@@ -2,7 +2,7 @@
 %define OFFSET_SUM   8
 %define OFFSET_SIZE  16
 %define OFFSET_ARRAY 24
-
+extern malloc
 OFFSET_LISTA_T EQU 36
 
 BITS 64
@@ -136,7 +136,7 @@ marcar_tarea_completada:
 	ret
 
 ; uint64_t* tareas_completadas_por_proyecto(lista_t*)
-;
+;	rdi = lista_t*
 ; Dada una lista enlazada de proyectos se devuelve un array que cuenta
 ; cuántas tareas completadas tiene cada uno de ellos.
 ;
@@ -149,24 +149,134 @@ marcar_tarea_completada:
 ;
 global tareas_completadas_por_proyecto
 tareas_completadas_por_proyecto:
-	; COMPLETAR
+	push rbp
+	mov rbp, rsp
+	push r15		; puntero al nuevo array
+	push r14
+	push r13
+	push r12
+	push rbx		; puntero a la estructura
+	
+	; El puntero es null? 
+	mov rbx, rdi
+
+	cmp rdi, 0 
+	je .fin
+
+	; Calculamos la longitud del array de salida
+	call lista_len				; en rax tenemos la longitud
+	mov r14, rax				; r14 = contador
+	; rax = sizeof(uint_32) * rax
+	shl rax, 3
+
+	mov rdi, rax
+
+	call malloc 
+
+	mov r15, rax		;Puntero al nuevo array
+
+	.loop:
+		cmp r14, 0
+
+		mov rdi, [rbx + OFFSET_ARRAY]
+		mov rsi, [rbx + OFFSET_SIZE]
+
+		call tareas_completadas
+
+		mov [r15], rax
+
+		dec r14
+		add r15, 8
+		add rbx, OFFSET_LISTA_T
+
+		jmp .loop
+
+ .fin:
+	mov rax, r15
+	pop rbx
+	pop r12
+	pop r13
+	pop r14
+	pop r15
+	pop rbp
 	ret
 
 ; uint64_t lista_len(lista_t* lista)
 ;
 ; Dada una lista enlazada devuelve su longitud.
-;
+;	rdi = lista
 ; - La longitud de `NULL` es 0
 ;
+global lista_len
 lista_len:
 	; OPCIONAL: Completar si se usa el esquema recomendado por la cátedra
+	push rbp
+	mov rbp, rsp
+	push r15
+	push r14
+	push rbx
+
+
+	xor rax, rax
+	mov rbx, rdi
+	cmp rbx, 0			; rbx es null?
+	je .fin
+
+	.loop:
+		cmp qword[rbx + OFFSET_NEXT], 0		;Hay nodo siguiente?
+		je .fin
+
+		inc rax
+		add rbx, 8
+		jmp .loop
+
+ .fin:	
+	pop rbx
+	pop r14
+	pop r15
+	pop rbp
 	ret
 
 ; uint64_t tareas_completadas(uint32_t* array, size_t size) {
 ;
 ; Dado un array de `size` enteros de 32 bits sin signo devuelve la cantidad de
 ; ceros en ese array.
-;
+;	rdi = *array
+;	rsi = size
 ; - Un array de tamaño 0 tiene 0 ceros.
+global tareas_completadas
 tareas_completadas:
 	; OPCIONAL: Completar si se usa el esquema recomendado por la cátedra
+	push rbp
+	mov rbp, rsp
+	push rbx
+	push r15
+	push r14
+	
+	xor rax,rax
+
+	mov rbx, rdi 
+
+	.loop:
+		cmp rsi, 0
+		je .fin
+		mov r15, [rbx + OFFSET_ARRAY]
+
+		cmp r15, 0
+		jne .siguiente
+
+		dec rsi
+		add rbx, 4
+		jmp .loop
+
+		.siguiente:
+			inc rax
+			dec rsi
+			add rbx, 4
+			jmp .loop
+ .fin:
+	pop r14
+	pop r15
+	pop rbx
+	pop rbp
+	ret
