@@ -14,32 +14,36 @@ section .text
 templosClasicos:
     push rbp
     mov rbp, rsp
+    sub rsp, 8
     push r13
     push r12    ;r12=   puntero al nuevo array
-    push r11    ; r11 puntero al nuevo array
     push r14    
     push r15
     push rbx    ; Puntero al array de templos
-    sub rsp, 16
+
 
     
 
     mov rbx, rdi                    ;rbx= puntero a temploArr
-    ;mov rcx, rsi                    ; rcx = tamaño de temploArr
+    mov r15, rsi                    ; rcx = tamaño de temploArr
     call cuantosTemplosClasicos     ; rax = cant de templos clasicos
     ;Armamos el tamaño de nuevo array de templos_clasicos
-    mov r12d,eax
+    mov r11d,eax
     mov r8d, OFFSET_TEMPLO    
     ; multiplicamos por el tamaño de la estructura
     mul r8d
     
     mov rdi, rax
     call malloc             ; Tenemos el puntero al nuevo array 
-    mov r11,rax             ; r11 =puntero al nuevo array 
+    mov r12,rax             ; r12 =puntero al nuevo array 
     mov [rbp-8],rax
     .ciclo:
-        cmp r12d, 0         ; Quedan templos por recorrer?
+        cmp r11d, 0         ; Quedan templos por recorrer?
         je .fin
+
+        cmp r15, 0
+        je .fin
+
 
         movzx r13, byte[rbx + OFFSET_COLUMN_CORTO]
         movzx r14, byte[rbx + OFFSET_COLUMN_LARGO]
@@ -50,12 +54,15 @@ templosClasicos:
         cmp r13, r14        ; 2 * N + 1 = M
         jne .siguiente
 
-        ; Agrego el templo clasico al nuevo array
-        mov r15b, [rbx + OFFSET_COLUMN_CORTO]       ; r15b = temploArr[rbx]->column_corto
-        mov [r11 + OFFSET_COLUMN_CORTO], r15b       ; newArray[r11]->colum_corto = r15b
 
-        mov r15b, [rbx + OFFSET_COLUMN_LARGO]     
-        mov [r11 + OFFSET_COLUMN_LARGO], r15b
+        ; Es templo clasico
+
+        ; Agrego el templo clasico al nuevo array
+        mov r8b, byte[rbx + OFFSET_COLUMN_CORTO]       ; r15b = temploArr[rbx]->column_corto
+        mov byte[r12 + OFFSET_COLUMN_CORTO], r8b       ; newArray[r11]->colum_corto = r15b
+
+        mov r9b, byte[rbx + OFFSET_COLUMN_LARGO]     
+        mov byte[r12 + OFFSET_COLUMN_LARGO], r9b
 
         ; Reservamos memoria para el nombre    
         mov rdi, [rbx + OFFSET_NOMBRE]         ; rdi= puntero a char a clonar
@@ -66,43 +73,44 @@ templosClasicos:
         
         call strClone                         ; rax = puntero al string 
         
-        mov [r11 + OFFSET_NOMBRE], rax
+        mov [r12 + OFFSET_NOMBRE], rax
 
         ;Vamos al siguiente templo
 
-        add r11, OFFSET_TEMPLO
+        add r12, OFFSET_TEMPLO
         add rbx, OFFSET_TEMPLO
-        dec r12d
+        dec r11d
+        dec r15
         jmp .ciclo
 
         .siguiente:
             add rbx, OFFSET_TEMPLO
-            cmp rbx, 0 
-            je .fin
+            dec r15
 
+            cmp r15, 0
+            je .fin
             jmp .ciclo
         
         .strVacio:
             ; No hay string, ponemos NULL
-            mov qword[r11 + OFFSET_NOMBRE], 0
+            mov qword[r12 + OFFSET_NOMBRE], 0
             ;Vamos al siguiente templo
-            add r11, OFFSET_TEMPLO
+            add r12, OFFSET_TEMPLO
             add rbx, OFFSET_TEMPLO
-            dec r12d
-
+            dec r11d
+            dec r15
             jmp .ciclo
 
 
 
  .fin:
     mov rax, [rbp-8]
-    add rsp,16
     pop rbx
     pop r15
     pop r14
-    pop r11
     pop r12
     pop r13
+    add rsp, 8
     pop rbp
     ret
 
@@ -112,16 +120,15 @@ templosClasicos:
 ; rsi = temploArr_len
 
 cuantosTemplosClasicos:
-push rbp
-mov rbp, rsp
-
-push r12
-push r13
-push rbx
-push r14  ; ALINEADA
-xor rax,rax
-mov rbx, rdi
-mov r14, rsi
+ push rbp
+ mov rbp, rsp
+ push r12
+ push r13
+ push rbx
+ push r14  ; ALINEADA
+ xor rax,rax
+ mov rbx, rdi
+ mov r14, rsi
 ; RECORRO EL ARRAY de TEMPLOS
 .ciclo:
     ; el puntero al array es nulo?
@@ -177,7 +184,11 @@ strClone:
  push rbx
  sub rsp,8						; ALINEADO	
  mov r14, rdi					; rbx= el puntero del string 
-
+ xor rbx,rbx
+ cmp rdi, 0
+ je .fin
+ cmp byte[rdi],0
+  je .fin
  ; rdi sigue siendo el puntero
  call strLen						; Obteniene la longitud del string 
  mov r13d, eax							; preserva rax, contiene la longitud del  string 
@@ -223,7 +234,8 @@ strLen:
  xor eax, eax			; inicializo contador
  mov r12, rdi
 
-
+ cmp rdi, 0
+ je .fin
 
  .ciclo:
 	; Accede rdi al primer caracter
