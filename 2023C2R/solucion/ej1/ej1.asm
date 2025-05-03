@@ -58,11 +58,69 @@ string_proc_node_create_asm:
  mov qword[rax + OFFSET_PREVIOUS], 0
  mov byte[rax + OFFSET_TYPE], r14b
  mov [rax + OFFSET_HASH], r15
-
  pop r14
  pop r15
  pop rbp
  ret
-string_proc_list_add_node_asm:
 
+;void string_proc_list_add_node_asm(string_proc_list* list, uint8_t type, char* hash
+; rdi = *lista
+; sil = type
+; rdx = *hash
+string_proc_list_add_node_asm:
+ push rbp
+ mov rbp, rsp
+ push r15
+ push r14
+ push r13
+ push r12
+ push rbx
+ sub rsp, 8
+ mov r15, rdi
+ mov r14b, sil
+ mov r13, rdx
+ 
+ cmp rdi, 0
+ je .end
+
+
+; Inicializamos nodo
+ mov rdi, SIZE_NODO
+ call malloc
+
+ mov qword[rax + OFFSET_NEXT],0             ;new_nodo->next=0
+ mov qword[rax + OFFSET_PREVIOUS], 0        ;new_nodod->previous=0
+ mov byte[rax + OFFSET_TYPE], r14b          ; new_nodo->type= type
+ mov [rax + OFFSET_HASH], r13               ; new_nodo->hash=hash
+
+; es una lista Vacia?
+ cmp qword[r15 +  OFFSET_FIRST], 0
+ je .esVacia
+
+
+ ; Hallamos el ultimo nodo actual
+ mov rbx, [r15 + OFFSET_LAST]               ;rbx = lista->last
+
+ ;SWAP
+ mov [rax + OFFSET_PREVIOUS], rbx           ;new_nodo->previous = lista->last
+
+ mov rbx, [r15 + OFFSET_LAST]               ;rbx = lista->last 
+ mov [rbx + OFFSET_NEXT], rax               ; lista->last->next = new_nodo
+
+ mov [r15 + OFFSET_LAST], rax               ; lista->last= new_nodo
+ jmp .end
+
+    .esVacia:
+        mov [r15 + OFFSET_FIRST], rax
+        mov [r15 + OFFSET_LAST], rax
+        
+
+ .end:
+    add rsp, 8
+    pop rbx
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+    pop rbp
 string_proc_list_concat_asm:

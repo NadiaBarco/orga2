@@ -14,21 +14,3 @@ List length: 0
 
 Agregando estrellas:
 
-List length: 0
-
-======================== Libera memoria =======================
-
-Creando lista vacia
-
-Agregando constelaciones y misiones:
-
-List length: 0
-
-======================== Libera memoria =======================
-
-======================== Fin del test 1a ========================= Ejercicio 1b ==
-
-Agregando constelaciones y misiones:
-
-
-
