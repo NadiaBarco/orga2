@@ -37,7 +37,6 @@ if [ $? -ne 0 ]; then
 fi
 
 valgrind --show-reachable=yes --leak-check=full --error-exitcode=1 ./tester
-valgrind --track-origins=yes --show-reachable=yes --leak-check=full ./tester
 if [ $? -ne 0 ]; then
   echo "  **Error de memoria"
   exit 1

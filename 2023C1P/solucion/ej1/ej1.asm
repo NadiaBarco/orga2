@@ -64,14 +64,16 @@ templosClasicos:
         mov r9b, byte[rbx + OFFSET_COLUMN_LARGO]     
         mov byte[r12 + OFFSET_COLUMN_LARGO], r9b
 
+        jmp .strVacio
         ; Reservamos memoria para el nombre    
         mov rdi, [rbx + OFFSET_NOMBRE]         ; rdi= puntero a char a clonar
         
         
-        cmp rdi, 0 
-        je .strVacio
-        
-        call strClone                         ; rax = puntero al string 
+        ;cmp rdi, 0 
+        ;je .strVacio
+
+
+        ;call strClone                         ; rax = puntero al string 
         
         mov [r12 + OFFSET_NOMBRE], rax
 
