@@ -109,7 +109,7 @@ en_blacklist_asm:
 
 		call compare
 
-		cmp al, 0
+		cmp al, 1
 		je .son_iguales
 
 		;No son iguales, seguimos
@@ -155,7 +155,7 @@ blacklistComercios_asm:
 	mov byte[rbp-32], cl ; size_comercios
 	movzx r13, dil		 ; r13 = camtidad_de_pagos
 	movzx r14, cl		 ; r14 = size_comercios
-
+	mov qword[rbp-40],0
 	xor r15,r15
 	.loop_comercios:
 		cmp r13, 0	; cantidad_pagos-=1
@@ -181,63 +181,15 @@ blacklistComercios_asm:
 			jmp .loop_comercios
 
 
-;	movzx r13, dil		; r13 = cantidad_pagos
-;	movzx r14, cl		; r14 = size_comercios
-	
-
-; 	movzx r9,cl
-; 	movzx r8, dil
-; 	;Contamos la cantidad de elementos de salida
-; 	.while_pagos:
-; 		cmp r13, 0
-; 		je .reservarMemoria
-		
-; 		.while_comercios:
-; 			cmp r14, 0
-; 			je .restauro_while_pagos
-
-; 			mov rdi, [r12 + OFFSET_COMERCIO]		; rdi = arr_pagos[i]->comercio
-; 			mov rsi, [rbx]							; rsi = arr_comercios[j]
-
-; 			;los comparo
-; 			call compare
-
-; 			cmp al, 0
-; 			je .siguiente
-
-; 			; Son strings iguales
-; 			inc r15									; count++
-
-			
-; 			cmp r14, 0								;Llegamos al final del array?
-; 			je .restauro_while_pagos
-			
-		
-; 			.siguiente:
-; 				dec r14
-; 				cmp r14, 0 
-; 				je .restauro_while_pagos
-; 				add rbx, 8							; arr_comercio[j+1]
-; 				jmp .while_comercios
-
-
-; 		.restauro_while_pagos:
-; 			dec r13
-; 			cmp r13, 0
-; 			je .reservarMemoria
-; 			mov r14, r9
-
-; 			;Volvemos al inicio de array_comercios			
-; 			mov rbx, [rbp-8]			; rbx = arr_comercios[0]
-; 			add r12, OFFSET_PAGO		; r12 = arr_pagos[i+1]
-; 			jmp .while_pagos
 
   .reservarMemoria:
+	cmp r15, 0
+	je .end
  	mov rdi, r15
  	shl rdi, 3
 
  	call malloc				; rax = pago_t** res
-	
+	xor r8,r8
  	mov [rbp-40], rax		; guardamos el puntero del array de pago_t
 	mov r12, [rbp-16]		; arr_pagos
 	mov rbx, [rbp-8]		; arr_comercios
@@ -247,7 +199,7 @@ blacklistComercios_asm:
 		je .end
 
 		cmp r13, 0
-		jmp .end
+		je .end
 		;Chequeamos que arr_pagos[i]->comercio este en arr_comercios
 		mov rsi, rbx							; **arr_comercio
 		mov rdi, [r12 + OFFSET_COMERCIO]		; arr_pagos[i]->comercio				
@@ -268,49 +220,7 @@ blacklistComercios_asm:
 			add r12, OFFSET_PAGO
 			jmp .loop_mod_blacklist
 
-; 	mov r15, rax			; r15 = pago_t** res
-	
-; 	; Rellenamos el array de los pagos
-; 	mov r12, [rbp-16]
-; 	mov rbx, [rbp-8]
-; 	;BUSCAMOS LOS COMERCIOS QUE ESTEN EN AMBAS LISTAS
-; 	.loop_pagos:
-; 		cmp r13, 0
-; 		je .end
 
-		
-; 		.loop_comercios:
-; 			cmp r14, 0
-; 			je .siguiente_pago
-
-; 			mov rdi, [r12 + OFFSET_COMERCIO]		; rdi = arr_pagos[i]->comercio
-; 			mov rsi, [rbx]							; rsi = arr_comercios[j]
-
-; 			;los comparo
-; 			call compare
-
-; 			cmp al, 0
-; 			je .next
-
-; 			; Son strings iguales
-; 			mov [r15], r12							; res[k] = arr_pagos[i]
-
-; 			.next:
-; 				dec r14
-; 				cmp r14, 0 
-; 				je .siguiente_pago
-				
-; 				add rbx, 8							; arr_comercio[j+1]
-; 				jmp .loop_comercios
-		
-; 	.siguiente_pago:	
-; 		dec r13
-; 		cmp r13, 0 
-; 		je .end
-; 		mov r14, r9
-; 		mov rbx, [rbp-16]			;Volvemos al inicio de array_comercios
-; 		add r12, OFFSET_PAGO		; r12 = arr_pagos[i+1]
-; 		jmp .loop_pagos
 
  .end:
     mov rax, [rbp-40]
@@ -332,17 +242,10 @@ compare:
 	push rbp
 	mov rbp ,rsp
 
-	test rdi,rsi
-	jnz .sonDiff
-
-
-
 	.loop:
 		mov al, byte[rdi]
 		mov bl, byte[rsi]
 
-		cmp al, bl
-		jne .sonDiff
 		test al, al
 		je .sonIguales
 
