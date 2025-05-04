@@ -105,7 +105,7 @@ en_blacklist_asm:
 
 		; Comparamos los strings
 		mov rdi, r13
-		mov rsi, rbx
+		mov rsi, [r14]
 
 		call compare
 
@@ -113,12 +113,15 @@ en_blacklist_asm:
 		je .son_iguales
 
 		;No son iguales, seguimos
-		add rbx, 8
+		add r14, 8
 		dec r15
 		jmp .loop
-
-		.son_iguales:
+		.notequal:
+			mov al, 0
 			jmp .end
+		.son_iguales:
+			mov al,1
+			
 
  .end:
 	pop rbx
@@ -239,27 +242,57 @@ global compare
 ; rdi = str
 ; rsi = str2
 compare:
-	push rbp
-	mov rbp ,rsp
+    push rbp
+    mov rbp, rsp
 
-	.loop:
-		mov al, byte[rdi]
-		mov bl, byte[rsi]
+.loop:
+    ; Cargar caracteres
+    movzx eax, byte[rdi]
+    movzx ebx, byte[rsi]
+    
+    ; Si son diferentes, las cadenas son diferentes
+    cmp al, bl
+    jne .different
+    
+    ; Si ambos caracteres son 0, hemos terminado y las cadenas son iguales
+    test al, al
+    jz .equal
+    
+    ; Avanzar al siguiente carácter
+    inc rdi
+    inc rsi
+    jmp .loop
+    
+.different:
+    mov eax, 0
+    jmp .end
+    
+.equal:
+    mov eax, 1
+    
+.end:
+    pop rbp
+    ret
+strLen:
+ push rbp
+ mov rbp, rsp
+ push r12
+ sub rsp, 8
+ xor eax, eax			; inicializo contador
+ mov r12, rdi
+ .ciclo:
 
-		test al, al
-		je .sonIguales
+	; Accede rdi al primer caracter
+	cmp byte[r12], 0		; Es igual a NULL(0)?
+	je .fin					; Si es igual, termino
 
-		inc rdi
-		inc rsi
-		jmp .loop
+	inc eax					; incremento el contador
+	inc r12					; Incrementa en un Byte, el puntero al proximo caracter
 
-		.sonDiff:
-			mov al, 0
-			jmp .end
-		.sonIguales:
-			mov al, 1
-
-			jmp .end
- .end:
-	pop rbp
+	jmp .ciclo
+	 
+ .fin:
+	add rsp, 8
+ 	pop r12
+ 	pop rbp
 	ret
