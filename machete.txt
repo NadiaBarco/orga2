@@ -47,3 +47,11 @@ tipo* donde tipo es una estructura → array de estructuras
 
 para ver info dentro de x/gd $rbx+16 con rbx tiene una direccion
 >>>>>>> ad0594d4ed6287984501213702a16496a8ec3b2b
+
+para un puntero que apunta a un array de puntero, ver un elemento es:
+p *(char **)$rbx //el primer elemento
+
+x/s ((char **) $rbx)[1]; como es el tipo de rbx 
+
+para acceder a una estructura(si tenemos un array de estructuras):
+p *(struct_t *) $reg/64
