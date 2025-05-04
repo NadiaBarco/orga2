@@ -139,7 +139,7 @@ en_blacklist_asm:
 blacklistComercios_asm:
 	push rbp
 	mov rbp, rsp
-	sub rsp, 32
+	sub rsp, 40
 	push r15
 	push r14
 	push r13
@@ -151,119 +151,175 @@ blacklistComercios_asm:
 
 	mov r12, rsi		; r12 = *arr_pagos
 	mov [rbp-16], r12
+	mov byte[rbp-24],dil ; cantidad de pagos
+	mov byte[rbp-32], cl ; size_comercios
+	movzx r13, dil		 ; r13 = camtidad_de_pagos
+	movzx r14, cl		 ; r14 = size_comercios
 
-	movzx r13, dil		; r13 = cantidad_pagos
-	movzx r14, cl		; r14 = size_comercios
-	
-
-	movzx r9,cl
-	movzx r8, dil
-	;Contamos la cantidad de elementos de salida
-	.while_pagos:
-		cmp r13, 0
-		je .reservarMemoria
-		
-		.while_comercios:
-			cmp r14, 0
-			je .restauro_while_pagos
-
-			mov rdi, [r12 + OFFSET_COMERCIO]		; rdi = arr_pagos[i]->comercio
-			mov rsi, [rbx]							; rsi = arr_comercios[j]
-
-			;los comparo
-			call compare
-
-			cmp al, 0
-			je .siguiente
-
-			; Son strings iguales
-			inc r15									; count++
-
-			
-			cmp r14, 0								;Llegamos al final del array?
-			je .restauro_while_pagos
-			
-		
-			.siguiente:
-				dec r14
-				cmp r14, 0 
-				je .restauro_while_pagos
-				add rbx, 8							; arr_comercio[j+1]
-				jmp .while_comercios
-
-
-		.restauro_while_pagos:
-			dec r13
-			cmp r13, 0
-			je .while_pagos
-			mov r14, r9
-
-			;Volvemos al inicio de array_comercios			
-			mov rbx, [rbp-8]			; rbx = arr_comercios[0]
-			add r12, OFFSET_PAGO		; r12 = arr_pagos[i+1]
-			jmp .while_pagos
-
- .reservarMemoria:
- 	mov r14, r9
-	mov r13, r8
-	mov rdi, r15
-	shl rdi, 3
-
-	call malloc				; rax = pago_t** res
-	
-	mov [rbp-24], rax		; guardamos el puntero del array de pago_t
-	mov r15, rax			; r15 = pago_t** res
-	
-	; Rellenamos el array de los pagos
-	mov r12, [rbp-16]
-	mov rbx, [rbp-8]
-	;BUSCAMOS LOS COMERCIOS QUE ESTEN EN AMBAS LISTAS
-	.loop_pagos:
-		cmp r13, 0
+	xor r15,r15
+	.loop_comercios:
+		cmp r13, 0	; cantidad_pagos-=1
 		je .end
 
+		;Chequeamos que arr_pagos[i]->comercio este en arr_comercios
+		mov rsi, rbx							; **arr_comercio
+		mov rdi, [r12 + OFFSET_COMERCIO]		; arr_pagos[i]->comercio				
+		mov dl, byte[rbp-32]
+		call en_blacklist_asm
+
+		cmp al, 0
+		je .siguiente_comercio
+
+		; al = 1, esta en la black_list
+		inc r15
+		.siguiente_comercio:
+			dec r13
+			cmp r13, 0 
+			je .reservarMemoria
+
+			add r12, OFFSET_PAGO
+			jmp .loop_comercios
+
+
+;	movzx r13, dil		; r13 = cantidad_pagos
+;	movzx r14, cl		; r14 = size_comercios
+	
+
+; 	movzx r9,cl
+; 	movzx r8, dil
+; 	;Contamos la cantidad de elementos de salida
+; 	.while_pagos:
+; 		cmp r13, 0
+; 		je .reservarMemoria
 		
-		.loop_comercios:
-			cmp r14, 0
-			je .siguiente_pago
+; 		.while_comercios:
+; 			cmp r14, 0
+; 			je .restauro_while_pagos
 
-			mov rdi, [r12 + OFFSET_COMERCIO]		; rdi = arr_pagos[i]->comercio
-			mov rsi, [rbx]							; rsi = arr_comercios[j]
+; 			mov rdi, [r12 + OFFSET_COMERCIO]		; rdi = arr_pagos[i]->comercio
+; 			mov rsi, [rbx]							; rsi = arr_comercios[j]
 
-			;los comparo
-			call compare
+; 			;los comparo
+; 			call compare
 
-			cmp al, 0
-			je .next
+; 			cmp al, 0
+; 			je .siguiente
 
-			; Son strings iguales
-			mov [r15], r12							; res[k] = arr_pagos[i]
+; 			; Son strings iguales
+; 			inc r15									; count++
 
-			.next:
-				dec r14
-				cmp r14, 0 
-				je .siguiente_pago
+			
+; 			cmp r14, 0								;Llegamos al final del array?
+; 			je .restauro_while_pagos
+			
+		
+; 			.siguiente:
+; 				dec r14
+; 				cmp r14, 0 
+; 				je .restauro_while_pagos
+; 				add rbx, 8							; arr_comercio[j+1]
+; 				jmp .while_comercios
+
+
+; 		.restauro_while_pagos:
+; 			dec r13
+; 			cmp r13, 0
+; 			je .reservarMemoria
+; 			mov r14, r9
+
+; 			;Volvemos al inicio de array_comercios			
+; 			mov rbx, [rbp-8]			; rbx = arr_comercios[0]
+; 			add r12, OFFSET_PAGO		; r12 = arr_pagos[i+1]
+; 			jmp .while_pagos
+
+  .reservarMemoria:
+ 	mov rdi, r15
+ 	shl rdi, 3
+
+ 	call malloc				; rax = pago_t** res
+	
+ 	mov [rbp-40], rax		; guardamos el puntero del array de pago_t
+	mov r12, [rbp-16]		; arr_pagos
+	mov rbx, [rbp-8]		; arr_comercios
+	movzx r13, byte[rbp-24]
+	.loop_mod_blacklist:
+		cmp r8, r15
+		je .end
+
+		cmp r13, 0
+		jmp .end
+		;Chequeamos que arr_pagos[i]->comercio este en arr_comercios
+		mov rsi, rbx							; **arr_comercio
+		mov rdi, [r12 + OFFSET_COMERCIO]		; arr_pagos[i]->comercio				
+		mov dl, byte[rbp-32]
+		call en_blacklist_asm
+
+		cmp al, 0
+		je .siguiente_pago
+
+		; al = 1, esta en la black_list
+		mov r14, [rbp-40]
+		mov [r14 + r8*8], r12
+		add r8, 1
+		.siguiente_pago:
+			dec r13
+			cmp r13, 0
+			je .end
+			add r12, OFFSET_PAGO
+			jmp .loop_mod_blacklist
+
+; 	mov r15, rax			; r15 = pago_t** res
+	
+; 	; Rellenamos el array de los pagos
+; 	mov r12, [rbp-16]
+; 	mov rbx, [rbp-8]
+; 	;BUSCAMOS LOS COMERCIOS QUE ESTEN EN AMBAS LISTAS
+; 	.loop_pagos:
+; 		cmp r13, 0
+; 		je .end
+
+		
+; 		.loop_comercios:
+; 			cmp r14, 0
+; 			je .siguiente_pago
+
+; 			mov rdi, [r12 + OFFSET_COMERCIO]		; rdi = arr_pagos[i]->comercio
+; 			mov rsi, [rbx]							; rsi = arr_comercios[j]
+
+; 			;los comparo
+; 			call compare
+
+; 			cmp al, 0
+; 			je .next
+
+; 			; Son strings iguales
+; 			mov [r15], r12							; res[k] = arr_pagos[i]
+
+; 			.next:
+; 				dec r14
+; 				cmp r14, 0 
+; 				je .siguiente_pago
 				
-				add rbx, 8							; arr_comercio[j+1]
-				jmp .loop_comercios
+; 				add rbx, 8							; arr_comercio[j+1]
+; 				jmp .loop_comercios
 		
-	.siguiente_pago:	
-		dec r13
-		cmp r13, 0 
-		je .loop_pagos
-		mov r14, r9
-		mov r12, [rbp-16]			;Volvemos al inicio de array_comercios
-		add r12, OFFSET_PAGO		; r12 = arr_pagos[i+1]
-		jmp .loop_pagos
+; 	.siguiente_pago:	
+; 		dec r13
+; 		cmp r13, 0 
+; 		je .end
+; 		mov r14, r9
+; 		mov rbx, [rbp-16]			;Volvemos al inicio de array_comercios
+; 		add r12, OFFSET_PAGO		; r12 = arr_pagos[i+1]
+; 		jmp .loop_pagos
 
  .end:
-    mov rax, [rbp-24]
+    mov rax, [rbp-40]
 	pop rbx
 	pop r12
 	pop r13
 	pop r14
 	pop r15
-	add rsp, 32
+	add rsp, 40
 	pop rbp
 	ret
 
@@ -276,8 +332,9 @@ compare:
 	push rbp
 	mov rbp ,rsp
 
-	cmp rdi,rsi
-	je .sonIguales
+	test rdi,rsi
+	jnz .sonDiff
+
 
 
 	.loop:
