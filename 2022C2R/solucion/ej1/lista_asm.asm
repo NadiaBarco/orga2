@@ -3,6 +3,7 @@
 %define OFFSET_SIZE  16
 %define OFFSET_ARRAY 24
 extern malloc
+extern realloc
 OFFSET_LISTA_T EQU 36
 
 BITS 64
@@ -97,39 +98,60 @@ marcar_tarea_completada:
 	mov rbp, rsp
 	push rbx
 	push r12
-	xor r9,r9
+	push r13
+	push r15
+
+	mov r13,rsi
 	;Verificmos si no es un puntero nulo
 	cmp rdi, 0
 	je .fin
 
 	mov rbx, rdi
+	xor r13,r13
 
-	cmp rsi, 0
-	je .modificar_tarea
-	mov r9, -1
+	mov r15, [rbx + OFFSET_ARRAY]
+
 	.ciclo:
+		cmp qword[rbx + OFFSET_SIZE], 0 				; Llegamos al final de array?
+		je .siguiente		; la tarea esta en el proyecto
 
-		cmp r9, rsi 				; count < indice
-		je .modificar_tarea		; la tarea esta en el proyecto
+		; Verificamos si es del mismo array
+		mov r12, [rbx + OFFSET_SIZE]
+		add r13, r12					; r13 = curr_i + lista->size
 
-		add r9, [rbx + OFFSET_SIZE]	;incrementamos el count
+		cmp r13, rsi					; curr_i + lista->size <= index
+		jg .modificar_tarea
 
-		; Vamos al proximo nodo
-		mov rbx,[rbx + OFFSET_NEXT]	
-		cmp rbx, 0
-		je .fin
-
-		jmp .ciclo
-
+		jmp .siguiente
 		.modificar_tarea:
-			sub r9, rsi				;Hallamos la posicion del indice en el array
-			mov r12d, dword[rbx + OFFSET_ARRAY + 4*r9] ; r12 = a->array[i]
+			;Hallamos la posicion del indice en el array
+			sub r13,r12
+			sub rsi, r13
+			
+			mov r12d, dword[r15 + 4*rsi] ; r12 = a->array[i]
+
+			; verificamos si hay siguiente nodo 
 
 			;modificamos la suma
 			sub dword[rbx + OFFSET_SUM], r12d
-			mov dword[rbx + OFFSET_ARRAY + 4*r9],0
+			mov dword[r15+ 4*rsi],0
+			
 			jmp .fin
+
+		.siguiente:
+			; pasamos al siguiente nodo
+			;add r13, r12	;incrementamos el count
+			mov rbx, [rbx + OFFSET_NEXT]	
+			mov r15, [rbx + OFFSET_ARRAY]
+			
+			cmp rbx, 0
+			je .fin
+
+			jmp .ciclo
+
  .fin:
+	pop r15
+	pop r13
 	pop r12
 	pop rbx
 	pop rbp
@@ -153,15 +175,11 @@ tareas_completadas_por_proyecto:
 	mov rbp, rsp
 	push r15		; puntero al nuevo array
 	push r14
-	push r13
 	push r12
 	push rbx		; puntero a la estructura
 	
 	; El puntero es null? 
 	mov rbx, rdi
-
-	cmp rdi, 0 
-	je .fin
 
 	; Calculamos la longitud del array de salida
 	call lista_len				; en rax tenemos la longitud
@@ -174,10 +192,10 @@ tareas_completadas_por_proyecto:
 	call malloc 
 
 	mov r15, rax		;Puntero al nuevo array
-
+	mov r12,rax
 	.loop:
 		cmp r14, 0
-
+		je .fin
 		mov rdi, [rbx + OFFSET_ARRAY]
 		mov rsi, [rbx + OFFSET_SIZE]
 
@@ -187,15 +205,17 @@ tareas_completadas_por_proyecto:
 
 		dec r14
 		add r15, 8
-		add rbx, OFFSET_LISTA_T
+		mov rbx, [rbx + OFFSET_NEXT]
 
 		jmp .loop
+	
+	.esNULL:
+		mov rax, 0
 
  .fin:
-	mov rax, r15
+	mov rax, r12
 	pop rbx
 	pop r12
-	pop r13
 	pop r14
 	pop r15
 	pop rbp
@@ -213,26 +233,22 @@ lista_len:
 	push rbp
 	mov rbp, rsp
 	push r15
-	push r14
 	push rbx
 
-
-	xor rax, rax
 	mov rbx, rdi
 	cmp rbx, 0			; rbx es null?
 	je .fin
-
+	mov rax, 1
 	.loop:
-		cmp qword[rbx + OFFSET_NEXT], 0		;Hay nodo siguiente?
+		mov rbx, qword[rbx + OFFSET_NEXT]	;Hay nodo siguiente?
+		cmp rbx, 0
 		je .fin
 
 		inc rax
-		add rbx, 8
 		jmp .loop
 
  .fin:	
 	pop rbx
-	pop r14
 	pop r15
 	pop rbp
 	ret
@@ -252,29 +268,31 @@ tareas_completadas:
 	push rbx
 	push r15
 	push r14
+	push r13
 	
 	xor rax,rax
 
 	mov rbx, rdi 
+	cmp rbx, 0 
+	je .fin
 
 	.loop:
 		cmp rsi, 0
 		je .fin
-		mov r15, [rbx + OFFSET_ARRAY]
+
+		mov r15, [rbx]
 
 		cmp r15, 0
 		jne .siguiente
 
-		dec rsi
-		add rbx, 4
-		jmp .loop
+		inc rax
 
 		.siguiente:
-			inc rax
 			dec rsi
 			add rbx, 4
 			jmp .loop
  .fin:
+	pop r13
 	pop r14
 	pop r15
 	pop rbx
