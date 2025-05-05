@@ -105,7 +105,7 @@ en_blacklist_asm:
 
 		; Comparamos los strings
 		mov rdi, r13
-		mov rsi, [r14]
+		mov rsi, [r14]				;rsi = **list_comercio[0]
 
 		call compare
 
@@ -113,7 +113,7 @@ en_blacklist_asm:
 		je .son_iguales
 
 		;No son iguales, seguimos
-		add r14, 8
+		add r14, 8					; r14 = *lista_comercio[i+1]
 		dec r15
 		jmp .loop
 		.notequal:

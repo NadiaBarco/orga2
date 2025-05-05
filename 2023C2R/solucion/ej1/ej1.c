@@ -1,12 +1,14 @@
 #include "ej1.h"
 
 string_proc_list* string_proc_list_create(void){
+	
 }
 
 string_proc_node* string_proc_node_create(uint8_t type, char* hash){
 }
 
 void string_proc_list_add_node(string_proc_list* list, uint8_t type, char* hash){
+
 }
 
 char* string_proc_list_concat(string_proc_list* list, uint8_t type , char* hash){

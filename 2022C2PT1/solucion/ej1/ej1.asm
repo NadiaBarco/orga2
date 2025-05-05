@@ -1,5 +1,6 @@
 global agrupar
-
+extern strcat
+extern realloc
 extern malloc
 ;########### SECCION DE DATOS
 section .data
@@ -7,7 +8,7 @@ MAX_TAGS EQU 4
 TEXT_OFFSET EQU 0
 TEXT_LEN_OFFSET EQU 8
 TAG_OFFSET EQU 16
-MSG_T_OFFSET 24
+MSG_T_OFFSET EQU 24
 ;########### SECCION DE TEXTO (PROGRAMA)
 section .text
 
@@ -20,13 +21,15 @@ agrupar:
     sub rsp, 16
     mov [rbp-8], rdi
     push r12
-    push r11
+
     push r13
+    push r14
 
     xor r12,r12
     xor r11,r11
     xor r13,r13
 
+    mov r14, rdi
     ;Es un array vacio
     cmp rdi,0
     je .fin
@@ -39,36 +42,56 @@ agrupar:
 
     mov [rbp-16], rax   ; guardamos el puntero del nuevo array
 
+
+    ;calculamos el len de cada text
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     ; Armemos los string
 
     .ciclo:
         cmp r13d, esi    ;Hay mas strcuts por recorrer?
         je .fin         ; No, termina
 
-        mov rdi, [rbp-8]   ;puntero del array
-        mov r12, [rdi + TAG_OFFSET]     ; 
+        mov r14, [rbp-8]   ;puntero del array
+        mov r12d, dword[r14 + TAG_OFFSET]     ; 
 
         ;A que tag pertenece?
-        cmp r12, 0
+        cmp r12d, 0
         je .tag0
 
-        cmp r12, 1
+        cmp r12d, 1
         je .tag1
 
-        cmp r12, 2
+        cmp r12d, 2
         je .tag2
 
-        cmp r12, 3
+        cmp r12d, 3
         je .tag3
 
 
         .tag0:
-            mov r11, [rdi+TEXT_LEN_OFFSET]
+            mov r11, [r14+TEXT_OFFSET]
 
     
  .fin:
+    pop r14
     pop r13
-    pop r11
     pop r12
     pop rbp
-
+    ret

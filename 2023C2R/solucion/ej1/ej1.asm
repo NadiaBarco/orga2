@@ -10,7 +10,7 @@ SIZE_LISTA EQU 16
 
 OFFSET_NEXT EQU 0
 OFFSET_PREVIOUS EQU 8
-OFFSET_TYPE EQU 17
+OFFSET_TYPE EQU 16
 OFFSET_HASH EQU 24
 SIZE_NODO EQU 32
 section .text
@@ -70,12 +70,14 @@ string_proc_node_create_asm:
 string_proc_list_add_node_asm:
  push rbp
  mov rbp, rsp
+ sub rsp, 8
  push r15
  push r14
  push r13
  push r12
  push rbx
- sub rsp, 8
+ 
+
  mov r15, rdi
  mov r14b, sil
  mov r13, rdx
@@ -84,15 +86,11 @@ string_proc_list_add_node_asm:
  je .end
 
 
-; Inicializamos nodo
- mov rdi, SIZE_NODO
- call malloc
-
- mov qword[rax + OFFSET_NEXT],0             ;new_nodo->next=0
- mov qword[rax + OFFSET_PREVIOUS], 0        ;new_nodod->previous=0
- mov byte[rax + OFFSET_TYPE], r14b          ; new_nodo->type= type
- mov [rax + OFFSET_HASH], r13               ; new_nodo->hash=hash
-
+; Creamos un nuevo nodo
+ mov rdi, rsi
+ mov rsi, r13
+ call string_proc_node_create_asm
+ 
 ; es una lista Vacia?
  cmp qword[r15 +  OFFSET_FIRST], 0
  je .esVacia
@@ -110,17 +108,18 @@ string_proc_list_add_node_asm:
  mov [r15 + OFFSET_LAST], rax               ; lista->last= new_nodo
  jmp .end
 
-    .esVacia:
-        mov [r15 + OFFSET_FIRST], rax
-        mov [r15 + OFFSET_LAST], rax
+.esVacia:
+    mov qword[r15 + OFFSET_FIRST], rax       ; list->first = nuevo_nodo
+    mov qword[r15 + OFFSET_LAST], rax        ; list->last = nuevo_nodo
         
 
  .end:
-    add rsp, 8
     pop rbx
     pop r12
     pop r13
     pop r14
     pop r15
+    add rsp, 8
     pop rbp
 string_proc_list_concat_asm:
+    
