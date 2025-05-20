@@ -102,7 +102,7 @@ texto_concatenacion_t* texto_concatenar(texto_cualquiera_t* izquierda, texto_cua
  * Funciones a implementar:
  *   - texto_tamanio_total
  */
-bool EJERCICIO_1B_HECHO = false;
+bool EJERCICIO_1B_HECHO = true;
 
 /**
  * Calcula el tamaño total de un `texto_cualquiera_t`. Es decir, suma todos los
@@ -112,14 +112,16 @@ bool EJERCICIO_1B_HECHO = false;
  *   - texto: El texto en cuestión.
  */
 uint64_t texto_tamanio_total(texto_cualquiera_t* texto) {
+
 	if (texto->tipo == TEXTO_LITERAL) {
 		texto_literal_t* literal = (texto_literal_t*) texto;
-		// ¿Cómo calculo el tamaño del texto que representa un literal?
-		return 0;
+		// ¿Cómo calculo el tamaño del texto que representa un literal?	
+		return literal->tamanio;
 	} else {
 		texto_concatenacion_t* concatenacion = (texto_concatenacion_t*) texto;
-		// ¿Cómo calculo el tamaño del texto que representa una concatenación?
-		return 0;
+		uint64_t derecha= texto_tamanio_total(concatenacion->derecha);
+		uint64_t izquierda = texto_tamanio_total(concatenacion->izquierda); 
+		return derecha + izquierda;
 	}
 }
 
@@ -129,7 +131,7 @@ uint64_t texto_tamanio_total(texto_cualquiera_t* texto) {
  * Funciones a implementar:
  *   - texto_chequear_tamanio
  */
-bool EJERCICIO_1C_HECHO = false;
+bool EJERCICIO_1C_HECHO = true;
 
 /**
  * Chequea si los tamaños de todos los nodos literales internos al parámetro
@@ -144,12 +146,13 @@ bool texto_chequear_tamanio(texto_cualquiera_t* texto) {
 	if (texto->tipo == TEXTO_LITERAL) {
 		texto_literal_t* literal = (texto_literal_t*) texto;
 		// ¿Cómo chequeo si un literal tiene el tamaño bien calculado?
-		return false;
+		return literal->tamanio == strlen(literal->contenido);
 	} else {
 		texto_concatenacion_t* concatenacion = (texto_concatenacion_t*) texto;
 		// ¿Cómo chequeo si una concatenación tiene el tamaño de sus literales
 		//  bien calculado?
-		return false;
+		bool izq= texto_chequear_tamanio(concatenacion->izquierda);
+		bool der = texto_chequear_tamanio(concatenacion->derecha);
+		return izq && der;
 	}
 }
-
