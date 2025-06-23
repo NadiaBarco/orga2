@@ -34,14 +34,66 @@ idt_init(){
 }
 
 //Luego armamos la interrupcion
+
+// Asumo que la tarea, pasa sus registros por eax y esi
 _isr90:
     pushad
-    call 
+    call swap 
     
+    popad
+    iret 
+//Esta mal cargar el cr3? en otro pd?
+// La id de la tarea debe estar corriendo? De todas formas, el scheduler puede/ tiene
+//todas las tareas, a si que puedo hacer swap con cualquier tarea, no hace falta que este RUNNABLE // sI PORQUE NO LO TOMARIA EL ID 
+// Asumo que ese id es el de la una tarea ejecutandosw
+
+
+
+typedef struct {
+    uint32_t id;
+    uint8_t se_hace_swap;
+}info_swap_t;
+
+
+
+typedef struct {
+    int16_t selector;
+    task_state_t state;
+    info_swap_t swap;
+  } sched_entry_t;
 
 
 
 
+void swap(){
+    // Verificamos que la otra tarea haya pedido swap
+    uint16_t id_dst = sched_tasks[current_task].swap.id; 
+    uint32_t id_src = (sched_tasks[current_task].selector) >> 3;
+    tss* tss = (tss*)gdt[id_src];
+    if(sched_tasks[current_task].swap.se_hace_swap != sched_tasks[id_dst].swap.se_hace_swap){
+        // TO DO
+    
+    // Si no, pausamos la tarea
+    sched_disable_task(current_task);
+    // seteamos los atributos de la nueva estructura del scheduler
+    // obetenemos la tss y vemos en esp0 que valor esta en 
+    uint32_t id_tss = (sched_tasks[current_task].selector) >> 3;
+    tss* tss = (tss*)gdt[id_tss];
+    uint32_t* esp0 = tss.ss0;
+    
+    sched_tasks[current_task].swap.id= esp0[4];
+    sched_tasks[current_task].swap.se_hace_swap=1;
+    // Pausamos la tarea y seguimos
+    }
+    // Las dos tareas pidieron swap 
+    uint32_t id_dst_1= sched_tasks[id_dst].selector >> 3; 
+    tss* tss_dst = (tss*) gdt[id_dst_l];
+    uint32* registros_src = tss_dst.esp
+    uint32*registros_dst = 
+
+    // cambio el array del esp0 de ambas tareas 
+    // cambio
+};
 
 
 
