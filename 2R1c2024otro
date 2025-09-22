@@ -1,0 +1,173 @@
+#include "gdt.h"
+#include "sched.h"
+#include "tasks.h"
+#include "mmu.h"
+#include "tss.h"
+#include "tasks.h"
+#define WAITING_LOCK 1   // Tarea bloqueada debe esperar hasta que se libere la syscall
+#define ENABLE 1
+
+typedef struct info{
+    uint8_t enable;
+    uint32_t id_task;
+}info_lock_t;
+
+typedef enum {
+  TASK_SLOT_FREE,
+  TASK_RUNNABLE,
+  TASK_PAUSED
+} task_state_t;
+
+//info_lock_t tasks_shared[MAX_TASKS];
+//uint8_t current_task;
+#define TASK_LOCKABLE_PAGE_VIRT 0x08004000
+#define TASK_LOCKABLE_PAGE_PHY  0x03005000
+
+// Variable global de estado, extern info_lock_t lock_state;
+info_lock_t lock_state ={         
+    .enable = ENABLE,
+    .id_task = 0,
+};
+
+// Modifico la syscall get_lock(), le agrego un parametro extra que contendra el tr de la tarea actual
+void get_lock(vaddr_t shared_page){
+    /* Si modificamos la dir SHARED por TASK_LOCKABLE_PAGE_VIRT cuando inicializamos
+    las tareas entonces no es necesario mapear */
+
+    // Es la direccion de la compartida? 
+    if (!(TASK_LOCKABLE_PAGE_VIRT == shared_page)){
+        return  // No, nada que hacer
+    }
+
+    mmu_map_page(rcr3(),TASK_LOCKABLE_PAGE_VIRT,TASK_LOCKABLE_PAGE_PHY,MMU_P|MMU_W|MMU_U);
+
+    // Si llegamos aca, podemos usar la syscall. DEFINIDA EN EL KERNEL
+    lock_state.id_task= current_task;
+    lock_state.enable = 0;         // Indicamos que ya el lock esta en uso
+
+    // Desmapeo la TASK_LOCKABLE_PAGE_VIRT del resto de tareas
+    for(int i = 0; i < MAX_TASKS; i++){
+        if( i != current_task ){
+            uint32_t cr3 = tss_tasks[i].cr3;
+            mmu_unmap_page(CR3_TO_PAGE_DIR(tss_tasks[i].cr3),TASK_LOCKABLE_PAGE_VIRT);
+
+        }
+    }
+};
+
+// Ejericicio 2a
+uint16_t lock(vaddr_t dir_virtual){
+    // Esta disponible la memoria compartida?
+    if((lock_state.enable != ENABLE)){
+        sched_disable_task(current_task);
+        // uint16_t sched_next_task(); // Necsario? cuando haga el return, ira a la prox tarea
+// Nos piden que si el lock no esta disponible, forcemos la salida de esa tarea a la sig.
+        // como llamo a la _isr32?
+        // La syscall puede retornar algo? Si es asi
+        return sched_next_task();
+        //return;
+    }
+    get_lock(dir_virtual);
+};
+
+void release(vaddr_t dir_virtual){
+    // Limpiamos la var global
+    lock_state.id_task = 0;
+    lock_state.enable = ENABLE;
+    sched_enable_task(current_task);
+    mmu_unmap_page(rcr3(),dir_virtual);
+};
+
+// En idt.c modificamos la funcion idt_init, agrgamos las dos syscalls de nivel 3
+idt_init(){
+    IDT_ENTRY3(50);     // Para lock
+    IDT_ENTRY3(51);     // Para release
+};
+
+
+
+
+
+// Definimos la direccion virtual compartida en isr.asm
+_isr50:
+    pushad
+    
+    mov eax, TASK_LOCKABLE_PAGE_VIRT
+    push eax 
+    call lock 
+    add esp, 4
+
+    // armo la interrupcion de reloj
+    cmp ax, 0
+    je .fin
+
+    str bx
+    cmp ax, bx 
+    je .fin
+
+    mov word [sched_task_selector], ax
+    jmp far [sched_task_offset]
+ .fin:
+    popad
+    iret
+
+_isr51:
+    pushad
+    
+    mov eax, TASK_LOCKABLE_PAGE_VIRT
+    push eax 
+    call release 
+    add esp, 4
+    
+    popad
+    iret
+
+
+/*2b) 
+Extendiendo este mecanismo, si la tarea de nivel 3 no posee lock. e intenta escribir
+se generara un page fault.  atendemos con el handler_page_fault y llamamos al lock(), y 
+modificamos la estructura del scheduler y el scheduler 
+*/
+typedef struct {
+  int16_t selector;
+  task_state_t state;
+  int auto_lock_desalojo;
+} sched_entry_t;
+
+//y en sched.c 
+
+uint16_t sched_next_task(void) {
+  // Buscamos la próxima tarea viva (comenzando en la actual)
+
+  // Verificamos si podemos desalojar 
+  if(sched_tasks[current_task].auto_lock_desalojo > 0) {
+    sched_tasks[current_task].auto_lock_desalojo++;
+    if(sched_tasks[current_task].auto_lock_desalojo== 5){
+        release(TASK_LOCKABLE_PAGE_VIRT);
+        sched_tasks[current_tsak].auto_lock_desalojo=0;
+        lock_state.enable=ENABLE;
+    }
+  }
+
+  int8_t i;
+  for (i = (current_task + 1); (i % MAX_TASKS) != current_task; i++) {
+    // Si esta tarea está disponible la ejecutamos
+
+    if (sched_tasks[i % MAX_TASKS].state == TASK_RUNNABLE) {
+      break;
+    }
+  }
+
+  // Ajustamos i para que esté entre 0 y MAX_TASKS-1
+  i = i % MAX_TASKS;
+
+  // Si la tarea que encontramos es ejecutable entonces vamos a correrla.
+  if (sched_tasks[i].state == TASK_RUNNABLE) {
+    current_task = i;
+    return sched_tasks[i].selector;
+  }
+
+  // En el peor de los casos no hay ninguna tarea viva. Usemos la idle como
+  // selector.
+  return GDT_IDX_TASK_IDLE << 3;
+}
