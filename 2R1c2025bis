@@ -1,0 +1,358 @@
+#include "mmu.h"
+#include "idt.h"
+#include "gdt.h"
+#include "sched.h"
+#include "i386.h"
+# include "tss.h"
+
+
+/*
+    * Deberia mapear la direccion virtual 0xC0C00000, ahi deberia estar mi cr3, no de ahi hasta 
+        los 4 mb es compartida
+    * vLa tarea lider puede escribir, la segunda tarea no solo leer
+    * A partir de la direccion 0xC0C00000 para ambas tareas deber ser una memoria compartida, 
+        deberiamos darle acceso
+    * DEberiamos setear solo las ppaginas que usamos, osea el que quiere acceder la lider
+*/
+
+typedef enum{
+    SIN_PAREJA,
+    BUSCA_PAREJA,
+    EMPAREJADO,
+}estado_union;
+
+
+/*
+Vammos a crear una estructura para las tareas que formen parejas, de tamaño MAX_TASKS 
+que es la cantidad maxima de tareas, porque 
+
+en el peor de los casos todas las tareas quisieran formar 
+pareja pero a la vez qquisieran ser lideres  
+
+esparejado_con nos va a indicar con que tarea esta emparejada la tarea actual, si lo esta, si no seria NULL
+es_lider nos indica si la tarea actual es lider
+hay_pareja nos dice en que estado esta la pareja
+*/
+
+typedef struct {
+    uint32_t enparejado_con;
+    bool es_lider;
+    estado_union hay_pareja;
+    //vaddr_t virt_start;
+    //vaddr_t virt_end;
+    uint32_t cant_pag;
+}info_parejas;
+
+/*
+Como son sycalls estas tres, debermos modificar el tp, debemos agrgar estas a la idt modificando el archivo idt.c, seran entrys de nivel 3 para que puedan ser llamadas para 
+las tareas de nivel 3
+el numero de interrupcion que recbirian sera crear_pareja() el 77, juntarse_con(id_tarea) con el 78 y abandonar_pareja() con el 79
+ */
+
+
+/*
+_isr77:
+    pushad
+    call crear_pareja
+
+    call sched_next_task
+    cmp eax, 0
+    je .fin     
+
+    str bx         
+    cmp ax, bx
+    je .fin
+
+    mov word [sched_task_selector], ax
+    jmp far [sched_task_offset]
+
+    popad
+    iret 
+
+_isr78:
+    pushad 
+    ; asumo que la tarea paso el id por el registro eax, entonces lo pusheo 
+    push eax 
+    call juntarse_con
+    add esp, 4
+
+    ; el retorno de esta funcion sera en la pila, debemos tomar el valor
+    ; hay qque saltar a la proxima tarea?
+    mov dword[esp + 28], eax
+
+    cmp eax, 0
+    jmp .fin    ; se logro emparejar
+
+
+    call sched_next_task
+    cmp eax, 0
+    je .fin     
+
+    str bx         
+    cmp ax, bx
+    je .fin
+
+    mov word [sched_task_selector], ax
+    jmp far [sched_task_offset]
+
+    .fin:
+
+    popad 
+    iret
+
+ _isr79:
+    pushad
+    call abandonar_pareja
+
+    call sched_next_task
+    cmp eax, 0
+    je .fin     
+
+    str bx         
+    cmp ax, bx
+    je .fin
+
+    mov word [sched_task_selector], ax
+    jmp far [sched_task_offset]
+
+    popad
+    iret   
+*/
+
+/*
+typedef struct {
+    uint32_t enparejado_con;
+    bool es_lider;
+    estado_union hay_pareja;
+    vaddr_t virt_start;
+    vaddr_t virt_end;
+    uint32_t cant_pag;
+}info_parejas;
+
+*/
+
+
+#define START_VIRTUAL_COMPARTIDA 0xC0C00000
+#define END_VIRTUAL_COMPARTIDA (START_VIRTUAL_COMPARTIDA + 1024*4096*4)
+
+info_parejas parejas[MAX_TASKS]={0};
+
+// ESTA SYSCALL DEBERIA LLAMARASE CUANDO ESTA TAREA QUIERA SER LIDER?
+void crear_pareja(){
+        // La tarea pide emparejarse
+    if(parejas[current_task].hay_pareja){ // hay pareja? Hay otra tarea relacuionada con esta?
+        // si es diff a 0 es por que tiene pareja o ya pidio antes, por lo que es lider
+        return;
+    }
+    // Se crea una pareja nueva, con este lider
+    parejas[current_task].es_lider=true;
+    parejas[current_task].hay_pareja = BUSCA_PAREJA; // Cambia el estado de la pareja
+    parejas[current_task].cant_pag=0;
+
+    sched_disable_task(current_task);
+    return;
+};
+
+int juntarse_con(int id_tarea){
+    // En estos dos casos debemos continuar con la proxima tarea
+    if(parejas[id_tarea].hay_pareja == EMPAREJADO){ // SI YA ESTA EMPAREJADO -> RETORNA 1
+        return 1;
+    }
+
+    if(parejas[id_tarea].hay_pareja == SIN_PAREJA){ // eSTAS TAREA NO TIENE NI BUSCA PAREJA, ESTA EN EL ESTADO DE INICIaLIZACION
+        return 1;
+    }
+
+    if(parejas[current_task].hay_pareja!=SIN_PAREJA){
+        return 1;
+    }
+
+    // LA TAREA id_tarea debe ser el lider, hay que emparejar estas tareas
+    parejas[current_task].es_lider=false;
+    parejas[current_task].enparejado_con = id_tarea;
+    parejas[id_tarea].enparejado_con = current_task;
+    //parejas[current_task].virt_start= parejas[id_tarea].virt_start;
+    //parejas[current_task].virt_end = parejas[id_tarea].virt_end;
+    
+
+    //Cambiamos el estado de ambas tareas
+    parejas[current_task].hay_pareja=EMPAREJADO;
+    parejas[id_tarea].hay_pareja=EMPAREJADO;
+    return 0;
+
+};
+
+void abandonar_pareja(){
+    if(parejas[current_task].hay_pareja==SIN_PAREJA){
+        return;
+    }
+    // contemplo dos casos que no sea lider o que sea lider y ya no quiera emparejamiento(NO, ESTA PAUSADA)
+    if(parejas[current_task].es_lider == false ){
+        // La tarea qque quiere abandonar y no es lider
+        //int j =0; // para las direcciones virtuales
+        uint32_t id_lider= parejas[current_task].enparejado_con;
+
+        if (parejas[id_lider].hay_pareja==SIN_PAREJA){ // La lider ya habia pedido desemparejamiento
+             for(int i = START_VIRTUAL_COMPARTIDA; i< END_VIRTUAL_COMPARTIDA; i+=4096){
+                // Limpiamos la tarea, limpiamos las paginas que uso 
+                zero_page(i); // modifica páginas basándose en una dirección virtual (no física!)
+                mmu_unmap_page(rcr3(),i);
+                //mmu_unmap_page(tss_tasks[id_lider].cr3,i);
+            }
+
+            // Desamapeamos las paginas de la tarea lider en el entorno de esta tarea
+            uint32_t cr3_lider = tss_tasks[id_lider].cr3;
+            // zero_page limpia paginas virtuales, cambiamos el cr3 para que no limpia nuevamente la de la tarea actual
+            lcr3(cr3_lider);
+            for(int i = START_VIRTUAL_COMPARTIDA; i< END_VIRTUAL_COMPARTIDA; i+=4096){
+               // Limpiamos la tarea, limpiamos las paginas que uso 
+                zero_page(i); // modifica páginas basándose en una dirección virtual (no física!)
+                mmu_unmap_page(rcr3(),i);
+            }
+            lcr3(tss_tasks[current_task].cr3);
+            // Limpiamos el estado de la pareja
+            parejas[id_lider].hay_pareja = SIN_PAREJA;
+            parejas[id_lider].enparejado_con = 0;
+            parejas[id_lider].cant_pag = 0;
+    
+            parejas[current_task].hay_pareja = SIN_PAREJA;
+            parejas[current_task].enparejado_con = 0;
+            parejas[current_task].cant_pag = 0;
+
+            sched_enable_task(id_lider);
+        }else{
+            // La lider pidio desemparejarse primero
+            for(int i = 0; i< parejas[current_task].cant_pag; i++){
+                // Limpiamos las paginas que uso 
+                zero_page(START_VIRTUAL_COMPARTIDA + PAGE_SIZE*i); // modifica páginas basándose en una dirección virtual (no física!)
+                mmu_unmap_page(rcr3(),START_VIRTUAL_COMPARTIDA + PAGE_SIZE*i)
+            }
+        }
+        // limpiamos la estructura DFE LA NO LIDER
+        parejas[current_task].cant_pag=0;
+        return;
+    }else{
+        // es lider se pausa la tarea
+        parejas[current_task].hay_pareja=SIN_PAREJA; // Va a mantener el id de la tarea pareja
+        sched_disable_task(current_task); // esta en espera, hasta que llame la otra   
+        // cuando la llama otra con juntarse_con()
+    }
+
+    // ASUMO QUE SALTA A LA PROXIMA TAREA (?)
+    return;
+};
+
+
+/* AUXULIAR*/
+// chequeamos que esten presentes la pt y pd 
+bool pagina_presente(uint32_t cr33, vaddr_t virt){
+    uint32_t cr3 = cr33;
+    pd_entry_t* pd_base = (pd_entry_t*) CR3_TO_PAGE_DIR(cr3);
+    uint32_t idx_pd = VIRT_PAGE_DIR(virt);
+    uint32_t idx_pt = VIRT_PAGE_TABLE(virt);
+
+    if(pd_base[idx_pd].attrs&MMU_P){
+        pt_entry_t* pt_base = (pt_entry_t*) MMU_ENTRY_PADDR(pd_base[idx_pd].pt);
+        if(pt_base[idx_pt].attrs&MMU_P){
+            return true;
+        }
+    }
+    return false;
+};
+
+
+ 
+// AHORA SI LA TAREA,  TAREA QQUIERE ACEEDER A MAS PAGINAS DENTRO DE LAS 1024 PERMITIDAS, HACEMOS QUE GENERE UN PAGE FAULT
+// SI ESTA DENTRO DE ESE RANGO, LE CEDEMOS UNA PAGINA NIVEL 3 Y LA MAPEAMOS 
+bool page_fault_handler(vaddr_t virt) {
+    // Chequeemos si el acceso fue dentro del area on-demand
+    if(virt>=START_VIRTUAL_COMPARTIDA && virt<=END_VIRTUAL_COMPARTIDA ){
+        if(parejas[current_task].hay_pareja==EMPAREJADO){
+            paddr_t phy = mmu_next_free_user_page(); 
+
+            uint32_t id_pareja= parejas[current_task].emparejado_con;
+            uint32_t cr3_pareja = tss_tasks[id_pareja].cr3;
+
+            if(parejas[current_task].es_lider==true){// Es la lider la que quiere acceder
+                mmu_map_page(rcr3(),virt,phy,MMU_P|MMU_U|MMU_W);
+                mmu_map_page(cr3_pareja,virt,phy,MMU_P|MMU_U);
+            }else{ // La no lider pidio la pagina 
+                mmu_map_page(rcr3(),virt,phy,MMU_P|MMU_U);
+                mmu_map_page(cr3_pareja,virt,phy,MMU_P|MMU_U|MMU_W);
+            }
+            parejas[current_task].cant_pag++;
+            parejas[id_pareja].cant_pag++;
+            tlbflush();
+            return true;
+        }
+        return false;
+
+    }
+    // NO esta en la direccion de los 4mb desde 0xC0C00000
+    return false;
+  }
+
+
+/*
+; Stack State:
+    ; [ INTERRUPT #] esp
+    ; [ ERROR CODE ] esp + 0x04
+    ; [ EIP        ] esp + 0x08
+    ; [ CS         ] esp + 0x0c
+    ; [ EFLAGS     ] esp + 0x10
+    ; [ ESP        ] esp + 0x14 (if DPL(cs) == 3)
+    ; [ SS         ] esp + 0x18 (if DPL(cs) == 3)
+
+_isr14:
+    pushad                          ; Guardar registros
+
+    ; revisamos el error code si es por un fallo de escritura/lectura
+    mov ecx, dword[esp + 36]; r/m32 -> 28 bytes, error code -> 36 bytes
+    and ecx, 3
+    cmp ecx, 3 ; bit R/W:1, bit P: 1
+    je .acceso_invalido ; acceso de escritura en solo lectura, 
+    ; No es un fallo de r/w se genera el page fault
+
+    ; Esta dentro de los 4MB?
+    mov eax, cr2                    ; Obtener dirección del fault
+    push eax
+    call page_fault_handler
+     ;pop eax
+    add esp, 4                      ; Limpiar parámetro
+    
+    ; Se escribio en la on demand?
+    cmp al, 0
+    jz .ring0_exception
+    jmp .fin
+    
+    ; Desactivamos la tarea
+    .acceso_invalido:    
+        str bx
+        shr ebx, 3  ; limpiamos el id      
+        push ebx
+
+        call sched_disable_task
+
+        jmp .fin
+    
+     ;No es la dirr de la on demand - PAGE FAULT
+    .ring0_exception:
+        call kernel_exception   ; printea todos los registros
+        jmp $               ; jmp infinito
+    
+    .fin:
+        popad                           ; Restaurar registros
+        add esp, 4                      ; ← ¡LIMPIAR EL ERROR CODE!
+        iret                            ; Ahora el stack está correcto
+*/
+
+uint32_t uso_de_memoria_de_las_parejas(){
+    uint32_t count=0;
+    for(int i=0; i < MAX_TASKS;i++){
+        if(i>parejas[i].enparejado_con){
+            continue; // Aseguramos que solo pase una vez
+        }
+        count+=parejas[i].cant_pag;
+    }
+    return count*4096;
+}

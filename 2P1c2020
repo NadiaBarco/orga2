@@ -1,0 +1,37 @@
+#include "mmu.h"
+#include "gdt.h"
+
+/*
+Calculo para convencernos 32 bits tiene una direccion(puede ser pd, pt,phy) una pagina
+tiene 4094 bytes(un byte == 8 bits) ==> 4096*8 = 32768 bits 
+cuanto direcciones podemos direccionar con 32768 bits en 32 bits? 32768 / 32 ==> 1024 direcciones   
+*/
+
+void* hasAliasing(uint32_t* cr3, void* lineal1, void* lineal2){
+    pd_entry_t* pd_base = (pd_entry_t*) CR3_TO_PAGE_DIR(cr3);
+
+    // accedemos a la fisica de lineal1, parecieran ser que son las pt_entrys por los 
+    // rangos
+
+    // itero dentro de las 1024 paginas que puede tener un directorio
+    for(int idx_pd1 =0; idx_pd1 < 1024; idx_pd1++){
+        for(int idx_pd2=0; idx_pd2 < 1024; idx_pd2++){
+            if(!(pd_base[idx_pd1].attrs&MMU_P) || !(pd_base[idx_pd2].attrs&MMU_P)){
+                continue;
+            };
+
+            pt_entry_t* pt1 =(pt_entry_t*) MMU_ENTRY_PADDR(pd_base[idx_pd1].pt);
+            pt_entry_t* pt2 =(pt_entry_t*) MMU_ENTRY_PADDR(pd_base[idx_pd2].pt);
+                    
+            for(int idx_pt1 =0; idx_pt1 < 1024; idx_pt1++){
+                for(int idx_pt2 =0; idx_pt2 < 1024; idx_pt2++){
+                    if((pt1[idx_pt1].page == pt2[idx_pt2].page) && !(idx_pd1 ==idx_pd2) && !(idx_pt1==idx_pt2)){
+                        lineal1 = *(void*) idx_pt1 << 12;
+                        lineal2 = *(void*)idx_pt2 << 12;
+                        return (void*) pt1[idx_pt1].page;
+            }}}
+        }
+    }
+
+    return 0;
+}

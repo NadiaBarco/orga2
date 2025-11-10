@@ -1,0 +1,64 @@
+#include "gdt.h"
+#include "sched.h"
+#include "tasks.h"
+#include "mmu.h"
+#include "tss.h"
+#include "tasks.h"
+
+// Agregamos las syscall a la idt, a si las tareas de nivel 3 puedan llamarla
+// Modificamos idt_init(), esta syscall la seteamos con el numero 0xFF
+
+idt_init(){
+  IDT_ENTRY0(80);
+};
+/*
+_isr80:
+  pushad
+  push ax
+  push edi 
+  push esi 
+  call espiar
+  add esp, 12
+  mov [esp+ 28], eax // eax es el ultimo parametro en pushearse, queda en la primer posicion
+  popad
+  iret 
+*/
+/*
+ax = selector de la tarea a espiar
+edi = dir virtual a espiar
+esi = dir virtual espia
+*/
+void espiar( uint16_t sel_a_espiar,uint32_t dir_espiar,uint32_t dir_espia){
+  //obtenemos el id del selector de segmento de la tarea a espiar
+  uint32_t id_espiar = sel_a_espiar >> 3; // corremos 3 bits(RPL y TI) y obtenemos el id
+
+  pd_entry_t* base_pd = (pd_entry_t*)CR3_TO_PAGE_DIR(tss_tasks[id_espiar].cr3);
+  // Obtenemo los idx del pd y pt 
+  uint32_t idx_pd = VIRT_PAGE_DIR(dir_espiar);
+  
+  if(!(base_pd[idx_pd].attrs & MMU_P)){
+    return -1;
+  };
+  uint32_t idx_pt = VIRT_PAGE_TABLE(dir_espiar);
+
+  uint32_t offset = VIRT_PAGE_OFFSET(dir_espiar);
+
+  pt_entry_t* base_pt= (pt_entry_t*)MMU_ENTRY_PADDR(base_pd[idx_pd].pt);
+  if(!(base_pt[idx_pt].attrs & MMU_P)){
+    return -1;
+  };
+// Como seguimos en el cr3 de la tarea espia, mapeamos temporalmente esta direccion fisica
+  mmu_map_page(rcr3(), ON_DEMAND_MEM_END_VIRTUAL,MMU_ENTRY_PADDR(base_pt[idx_pt].page),MMU_P|MMU_W);
+
+  // obtenemos los 4 bytes de la direccion a espiar
+  uint32_t copia = *(uint32_t*) (ON_DEMAND_MEM_END_VIRTUAL + offset);
+   
+  *dir_espia =copia;
+  mmu_unmap_page(rcr3(),ON_DEMAND_MEM_END_VIRTUAL);
+  return 0;
+}
+
+
+
+// EJERICIO 2
+

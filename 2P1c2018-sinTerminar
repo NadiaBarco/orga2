@@ -1,0 +1,110 @@
+// Ejercicio 2
+#include "mmu.h"
+/*
+    * Hay 15 tareas que se ejecutan concurrentemente
+    * Las tareas pueden generar una excepcion, si lo hace se reinicia
+    *  Que significa reiniciarla? Pisar toda la memoria de la tarea por una copia
+    * osea limpiar las paginas. Lo vamos a hacer con la funcion informar( id tarea)
+    *Esta funcion esta en cada tarea, en la direccion virtual 0x3700000 estara la dir de informar()
+    * Una vez ejecutada se llama a finalizar con la interrupt 0x54
+    * 
+*/
+
+/*
+    SE PIDE
+    *   Una rutina de atencion de excepciones y la syscall finallizar
+*/
+
+// 1. Se genera una excepcion por la tarea actual
+// 2. Se avisa al resto de las tareas
+// 2.1 ?? Las tareas se suspenden? 
+// 3.Se llama a informar en la direccion virtual 0x3700000
+// 4. Llamamos a la interrupcion 0x54(84)
+// 5. se limpian todas las paginas
+#define MAX_TASKS 15
+
+// Si una tarea genero una excepcion debemos llamar a la funcion informar(uint32_t tarea) para que la limpie
+// Deberiamos crear un handler de excepcion
+
+
+// Creamos una variable global para informar a todas las tareas que ocurrio una excepcion
+
+uint8_t excepcion_generada = 0;
+
+void aviso_exception(){
+    excepcion_generada = 1;
+}
+
+/*
+// Excepcio de una tarea
+%macro ISRc 1
+    push DWORD %1
+    ; Stack State:
+    ; [ INTERRUPT #] esp
+    ; [ ERROR CODE ] esp + 0x04
+    ; [ EIP        ] esp + 0x08
+    ; [ CS         ] esp + 0x0c
+    ; [ EFLAGS     ] esp + 0x10
+    ; [ ESP        ] esp + 0x14 (if DPL(cs) == 3)
+    ; [ SS         ] esp + 0x18 (if DPL(cs) == 3)
+
+    ; GREGS
+    pushad
+    ; Check for privilege change before anything else.
+    mov edx, [esp + (8*4 + 3*4)]
+
+    ; SREGS
+    xor eax, eax
+    mov ax, ss
+    push eax
+    mov ax, gs
+    push eax
+    mov ax, fs
+    push eax
+    mov ax, es
+    push eax
+    mov ax, ds
+    push eax
+    mov ax, cs
+    push eax
+
+    ; CREGS
+    mov eax, cr4
+    push eax
+    mov eax, cr3
+    push eax
+    mov eax, cr2
+    push eax
+    mov eax, cr0
+    push eax
+
+    cmp edx, CS_RING_0_SEL
+    je .ring0_exception
+
+    ; COMPLETAR (opcional):
+    ;   Si caemos acá es porque una tarea causó una excepción
+    ;   En lugar de frenar el sistema podríamos matar la tarea (o reiniciarla)
+    ;   ¿Cómo harían eso?
+    call kernel_exception
+    add esp, 10*4
+    popad
+
+    xchg bx, bx
+    jmp $
+
+
+.ring0_exception:
+    call kernel_exception
+    add esp, 10*4
+    popad
+
+    xchg bx, bx
+    jmp $
+
+%endmacro
+
+*/
+
+void informar(int tarea){
+    
+}

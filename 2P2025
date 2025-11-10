@@ -1,0 +1,72 @@
+#include "idt.h"
+#include "task.h"
+#include "tss.h"
+#include "sched.h"
+/*    task_id pareja_de_actual(): si la tarea actual está en pareja devuelve el task_id de su pareja, o devuelve 0 si la tarea actual no está en pareja.
+    bool es_lider(task_id tarea): indica si la tarea pasada por parámetro es lider o no.
+    bool aceptando_pareja(task_id tarea): si la tarea pasada por parámetro está en un estado que le permita formar pareja devuelve 1, si no devuelve 0.
+    void conformar_pareja(task_id tarea): informa al sistema que la tarea actual y la pasada por parámetro deben ser emparejadas. Al pasar 0 por parámetro, se indica al sistema que la tarea actual está disponible para ser emparejada.
+    void romper_pareja(): indica al sistema que la tarea actual ya no pertenece a su pareja actual. Si la tarea actual no estaba en pareja, no tiene efecto.
+
+El mecanismo que usamos para invocar estas sycall van a ser mediante interrupciones de
+software, por comodidad voy a usar las 91,92 y 93, vamos a introducir estas interrupciones a 
+la idt, vamos a decir que estas syscalls reciben sus parametros a traves de los registros de
+proposito general, en el orden de la convencion, y los valores de retorno de estas syscalls seran en rax
+*/
+
+// Agregamos estas interrupciones al vector de interrupciones, mas especificamente a idt_init()
+// con la macro IDT_ENTRY3() vamos a añadirlas, elejimos la de nivel 3 ya que son interrupciones de 
+// software. 
+
+idt_init(){
+    IDT_ENTRY3(91); //para invocar a crear_pareja
+    IDT_ENTRY3(92); // para invocar a juntarse_con
+    IDT_ENTRY3(93); // para invocar abandonar_pareja
+}
+
+//implementamos las syscalls
+// Antes de implementarlas, tneemos que armar la estructura de las parejas, el sistema de emparejamineto
+// Tenemos que tener en cuenta:
+/*
+    Toda tarea puede pertenecer como máximo a una pareja.
+    Toda tarea puede abandonar a su pareja.
+    Las tareas pueden formar parejas cuantas veces quieran, pero solo pueden pertenecer a una en un momento dado.
+    Las tareas de una pareja comparten un area de memoria de 4MB (2^22 bytes) a 
+    partir de la direccion virtual 0xC0C00000. Esta región se asignará bajo demanda. 
+    Acceder a memoria no asignada dentro de la región reservará sólo las páginas necesarias para cumplir ese acceso. 
+    Al asignarse memoria ésta estará limpia (todos ceros). Los accesos de ambas tareas de una pareja en ésta región 
+    deben siempre observar la misma memoria física.
+    Sólo la tarea que crea una pareja puede escribir en los 4MB a partir de 0xC0C00000.
+    Cuando una tarea abandona su pareja pierde acceso a los 4MB a partir de 0xC0C00000.
+    */
+
+#define START_SHARED_MEMORY 0xC0C00000
+#define END_SHARED_MEMORY 0xC0C00000 + 1024*PAGE_SIZE
+typedef struct {
+    estado_pareja_t estado;
+    bool es_lider;
+    uint16_t es_pareja_de;
+    vaddr_t pagina_disp=START_SHARED_MEMORY;
+}parejas;
+
+typedef enum {
+    SIN_PAREJA,// este estado lo vamos a considerar como de "inicio" 
+    BUSCANDO_PAREJA,
+    EN_PAREJA,
+}estado_pareja_t;
+
+parejas info_parejas[MAX_TASKS]={0};
+
+// La tarea actual traves de la interupcion 91 llama a crear_pareja
+// Consultamos si ya perteneces a una pareja
+void crear_pareja(){
+    if (!pareja_de_actual()){
+        info_parejas[current_task].estado = BUSCANDO_PAREJA;
+        info_parejas[current_task].es_lider = true;
+        
+        sched_disable_task(current_task); // Hasta que la otra tarea no se una 
+        return;
+    }
+    return;
+    
+}

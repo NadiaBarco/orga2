@@ -1,0 +1,218 @@
+#include "gdt.h"
+#include "tss.h"
+#include "sched.h"
+#include "mmu.h"
+#include "idt.h"
+// Vamos a implementar la syscall que genera la copia
+// Agregamos la syscall a la idt, vamos a elegir la 88 
+void idt_init(){
+    IDT_ENTRY3(88);
+}
+
+/*
+Vamos a armar esta rutina para que cuando una tarea llame a la syscall 88, eso nos va
+a indicar que esa tarea quiere generar una copia de su contexto actual
+
+_isr88:
+    pushad
+    call copy_task
+    popad
+    iret
+
+*/
+
+// Armamos una array de tareas alocadas en la gdt(puntero a las tss's)
+// Esto nos va a indicar que la tarea que llamo a la syscall necesita una copia de si misma
+// Nos va a ser de gran ayuda, ya que este array sera una variable global. 
+// Con esto, vamos a poder verificar si la tarea pide una copia o no. En el archivo sched.c, si no
+// se pide copia sched_next_task ejecuta normalmente, si la tarea lo pide entonces vamos a generar la copia
+// Se llamara a la funcion get_copy() lo que hara sera, buscar un slot libre en la GDT, una vez hecho esto
+//  crear un descriptor de tss pero esta tendrea la copia del contexto de la tarea solicitante, con ciertas modificaciones 
+// la pagina de datos(ds) y pila(ss3) son de solo lectura y copiar los datos de la pila de nivel 0?
+typedef struct{
+    uint8_t copy;
+}copy_info_t;
+
+copy_info_t task_copy[MAX_TASKS]={0};
+
+
+// Se solicita una copia de la tarea actual
+void copy_task(){
+    task_copy[current_task].copy=1;
+    return;
+}
+
+
+
+// la tareas tareas tienen una dir virtual donde se aloja la dir de codigo/pila
+// Vamos a asumir que la siguiente macro es una direccion virtual donde se aloja la paginas pedids
+#define USER_STACK 0xFECAFECA
+#define USER_DATA 0xCAFECAFE
+
+
+void get_copy(){
+    // Buscamos un slot libre en la gdt
+    uint32_t gdt_id;
+    for(gdt_id = GDT_TSS_START; gdt_id < GDT_COUNT; gdt_id++){
+        if(gdt[gdt_id].p == 0){
+            break;
+        }
+    }
+
+    gdt_id = (gdt_id >= GDT_COUNT) ? -1: gdt_id;
+
+    // Encontramos slot libre, creamos la tss copia
+    uint8_t id = sched_add_task(gdt_id);
+    tss_t* current_tss = &tss_tasks[current_task];
+    tss_t tss_copia = *current_tss;
+
+    // Para aislar las tareas, pedimos una pagina para el puntero al directorio de paginas
+    tss_copia.cr3 = mmu_next_free_kernel_page();
+
+    // Creamos una nueva pila de nivel 0
+    paddr_t pila= mmu_next_free_kernel_page() + PAGE_SIZE;
+    tss_copia.esp0= pila;
+
+    // Copiamos la tss de la copia
+    tss_tasks[gdt_id] = tss_copia;
+
+    // el stack3 y las paginas de datos deberia ser solo de lectura
+    // Para esto deberiamos setear tanto la PDE como la PT con acceso usuario
+
+    // Primero copiemos todas las paginas de la pd y pt, ya que las pilas deberia estar en la pd
+    pd_entry_t* pd_a_copiar= (pd_entry_t*)tss_tasks[current_task].cr3;
+    pd_entry_t* pd_copia= (pd_entry_t*)tss_copia.cr3;
+    tss_copia.esp = mmu_next_free_user_page();
+
+    // Copiamos la tss de la copia
+    tss_tasks[gdt_id] = tss_copia;
+
+    // Mapeamos esta direccion CON solo de lectura
+    mmu_map_page(tss_copia.cr3,USER_STACK,tss_copia.esp,MMU_P|MMU_U);
+    for(int idx_pd =0; idx_pd < 1024; idx_pd++){
+        if(!(pd_a_copiar[idx_pd].attrs&MMU_P)){
+            continue;
+        }
+        // Copiamos las page directorys, el mapeo de identidad
+        //pd_copia[idx_pd] = pd_a_copiar[idx_pd];
+
+        paddr_t new_table =mmu_next_free_kernel_page();
+
+        // Generamos la estructura de la nueva pagina
+        pt_entry_t* pt_copia = (pt_entry_t*)(new_table);
+        pt_entry_t* pt_a_copiar = (pt_entry_t*)MMU_ENTRY_PADDR( pd_a_copiar[idx_pd]);
+
+        // Le asignamos el valor de direccion fisica
+        pd_copia[idx_pd].pt = new_table >> 12;
+        pd_copia[idx_pd].attrs = pd_a_copiar[idx_pd].attrs;
+        
+        for(int idx_pt=0; idx_pt < 1024; idx_pt++){
+
+            if(!(pt_a_copiar[idx_pt].attrs&MMU_P)){// esta presente la pt?
+                continue;
+            }
+
+            
+            // Encontramos la pagina de datos
+            if (( idx_pd << 22 | idx_pt << 12) == (USER_DATA&0xFFFFF000)){
+                pt_copia[idx_pt].page = pt_a_copiar[idx_pt].page;
+                pt_copia[idx_pt].attrs = pt_a_copiar[idx_pt].attrs & ~MMU_W;    
+            } 
+
+            // Encontramos la pagina de pila
+            else if (( idx_pd << 22 | idx_pt << 12) == (USER_STACK&0xFFFFF000)){
+                pt_copia[idx_pt].page = pt_a_copiar[idx_pt].page;
+                pt_copia[idx_pt].attrs = pt_a_copiar[idx_pt].attrs & ~MMU_W;    
+            } 
+            else{
+                pd_a_copiar[idx_pt] = pd_copia[idx_pt];
+            }
+            
+        }
+    }
+    task_copy[current_task].copy =0;
+    sched_enable_task(gdt_id);
+
+    return;
+}
+
+// EJERCICIO 3
+/*
+Como se cambia el atributo de escritura a la pagina de datos y pila, se generara un page fault por el 
+intento de escritura, deberia chekear esa guarda, si se escribio en una pagina de datos o pila entonces
+pedimos una nueva pagina fisica hacemos un copy page de la pila/datos de lectura a una con escritura 
+*/
+
+bool page_fault_handler(vaddr_t virt) {
+
+   if(virt>=USER_STACK && virt<= USER_STACK + PAGE_SIZE){
+     // por si tiene un offset valido, tiene que ser multiplo de 4k
+     //vaddr_t virtual_page= (vaddr_t) virt & 0xFFFFF000;
+     paddr_t pagina_user = mmu_next_free_user_page(); 
+
+    // de_virt_a_fisica es una funcion que pasa de una direccion virtual a fisica
+     paddr_t pag_dst = de_virt_a_fisica(virt);
+     copy_page(pag_dst,pagina_user);
+
+
+     mmu_map_page(rcr3(),USER_STACK,pagina_user,MMU_W|MMU_P|MMU_U);
+
+
+     print("SE ATENDIO EL PAGE FAULT",0,44,0xA);
+     tlbflush();
+     return true;
+    }
+
+    if(virt>=USER_DATA && virt<= USER_DATA + PAGE_SIZE){
+        paddr_t pagina_user = mmu_next_free_user_page(); 
+        // de_virt_a_fisica es una funcion que pasa de una direccion virtual a fisica
+        paddr_t pag_dst = de_virt_a_fisica(virt);
+        copy_page(pag_dst,pagina_user);
+
+        mmu_map_page(rcr3(),USER_DATA,pagina_user,MMU_W|MMU_P|MMU_U);
+
+        tlbflush();
+        return true;
+    }
+
+  // En caso de que si, mapear la pagina ---
+  print("NO SE ATENDIO EL PAGE FAULT!",0,45,0xA);
+
+  return false;
+}
+
+// Ahora que el page fault devolvio false, deberia saltar a la proxima tarea
+// wentonces deberiamos modifcar nuestra _isr14
+
+
+_isr14:
+    pushad                          ; Guardar registros
+    mov eax, cr2                    ; Obtener dirección del fault
+    push eax
+    call page_fault_handler
+     ;pop eax
+    add esp, 4                      ; Limpiar parámetro
+    
+     ; Se escribio en la pagina de pila/datos?
+    cmp al, 0
+    jz .ring0_exception 
+    jmp .fin
+    
+     ;No es la pag de pila/datos - PAGE FAULT -> vamos a la siguiente tarea
+    .ring0_exception:
+        call sched_next_task   ; 
+        cmp ax, 0
+        je .fin
+
+        str bx
+        cmp ax, bx
+        je .fin
+
+        mov word [sched_task_selector], ax
+        jmp far [sched_task_offset]
+
+    
+    .fin:
+        popad                           ; Restaurar registros
+        add esp, 4                      ; ← ¡LIMPIAR EL ERROR CODE!
+        iret                            ; Ahora el stack está correcto

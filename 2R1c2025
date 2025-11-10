@@ -1,0 +1,382 @@
+#include "mmu.h"
+#include "idt.h"
+#include "gdt.h"
+#include "sched.h"
+#include "i386.h"
+
+
+/*
+    * Deberia mapear la direccion virtual 0xC0C00000, ahi deberia estar mi cr3, no de ahi hasta 
+        los 4 mb es compartida
+    * vLa tarea lider puede escribir, la segunda tarea no solo leer
+    * A partir de la direccion 0xC0C00000 para ambas tareas deber ser una memoria compartida, 
+        deberiamos darle acceso
+    * DEberiamos setear solo las ppaginas que usamos, osea el que quiere acceder la lider
+*/
+
+typedef enum{
+    SIN_PAREJA,
+    BUSCA_PAREJA,
+    EMPAREJADO,
+}estado_union;
+
+
+/*
+Vammos a crear una estructura para las tareas que formen parejas, de tamaño MAX_TASKS 
+que es la cantidad maxima de tareas, porque 
+
+en el peor de los casos todas las tareas quisieran formar 
+pareja pero a la vez qquisieran ser lideres  
+
+esparejado_con nos va a indicar con que tarea esta emparejada la tarea actual, si lo esta, si no seria NULL
+es_lider nos indica si la tarea actual es lider
+hay_pareja nos dice en que estado esta la pareja
+*/
+
+typedef struct {
+    uint32_t enparejado_con;
+    bool es_lider;
+    estado_union hay_pareja;
+    uint32_t phy_start;
+    uint32_t phy_end;
+    uint32_t cant_pag;
+}info_parejas;
+
+
+/*
+Como son sycalls estas tres, debermos modificar el tp, debemos agrgar estas a la idt modificando el archivo idt.c, seran entrys de nivel 3 para que puedan ser llamadas para 
+las tareas de nivel 3
+el numero de interrupcion que recbirian sera crear_pareja() el 77, juntarse_con(id_tarea) con el 78 y abandonar_pareja() con el 79
+ */
+
+
+/*
+_isr77:
+    pushad
+    call crear_pareja
+    popad
+    iret 
+
+_isr78:
+    pushad 
+    ; asumo que la tarea paso el id por el registro eax, entonces lo pusheo 
+    push eax 
+    call juntarse_con
+    add esp, 4
+
+    ; el retorno de esta funcion sera en la pila, debemos tomar el valor
+    ; hay qque saltar a la proxima tarea?
+    mov eax, dword[esp + 28]
+
+    cmp eax, 0
+    jmp .fin    ; se logro emparejar
+
+    ; No se emparejo 
+    ; Realizamos el cambio de tareas 
+
+    call sched_next_task
+    cmp eax, 0
+    je .fin     
+
+    str bx         
+    cmp ax, bx
+    je .fin
+
+    mov word [sched_task_selector], ax
+    jmp far [sched_task_offset]
+
+    .fin:
+
+    popad 
+    iret
+
+ _isr79:
+    pushad
+    call abandonar_pareja
+    popad
+    iret   
+*/
+
+/*
+typedef struct {
+    uint32_t esparejado_con;
+    bool es_lider;
+    estado_union hay_pareja;
+}info_parejas;
+
+*/
+
+
+#define START_VIRTUAL_COMPARTIDA 0xC0C00000
+
+
+info_parejas parejas[MAX_TASKS]={0};
+
+
+//  esTA SYSCALL DEBERIA LLAMARASE CUANDO ESTA TAREA QUIERA SER LIDER?
+void crear_pareja(){
+    // La tarea pide emparejarse
+    if(parejas[current_task].hay_pareja){ // hay pareja? Hay otra tarea relacuionada con esta?
+        // si es diff a 0 es por que tiene pareja o ya pidio antes, por lo que es lider
+        return;
+    }
+
+    // No tiene pareja y quiere emparejarse
+    parejas[current_task].es_lider = 1; // Ahora es lider
+    parejas[current_task].hay_pareja = BUSCA_PAREJA; // ACTUALIZAMOS SU ESTADO, YO NO ESTA EN SIN_PAREJA, AHORA ES LIDER Y BUSCA PAREJA
+
+    // VAMOS A GUARDAR LA DIRECCION FISICA DE DONDE EMPIEZA A ESCRIBIR LA TAREA LIDER
+    // AGREGAMOS A NUESTRA ESTRUCTURA EL ATRIBUTO PHY QUE SERA LA DIRECCION FISICA DONDE COMIENZA LA TAREA LIDER
+
+    /*
+        typedef struct {
+            uint32_t esparejado_con;
+            bool es_lider;
+            estado_union hay_pareja;
+            uint32_t phy
+        }info_parejas;
+
+    */
+    
+    // Vamos a pedir una direccion fisica de nivel usuario(puede haber tareas de 0 o 3) para que escriba en esa direccion virtual dada
+    // y luego mapeamos phy con la direccion fisica dada, si la lider qquiera escribir en otra pagina debe ser la dir virtual y el incremento,
+    // osea se pide una nueva pagina a escribir, se modifica la fisica, se incrementa phy ya que next_free_user_page() da una direccion contigua, entonmces 
+    // incrementamos la fisica, a si vamos mapeando    
+    uint32_t phy= mmu_next_free_user_page();
+    parejas[current_task].phy_start = phy; // Lo guardamos a si la tarea no lider puede saber desde donde leer
+    parejas[current_task].phy_end = phy;
+    parejas[current_task].cant_pag = 1; // solo pedimos una pagina
+    // Mapeamos la phy con la virtual
+    mmu_map_page(rcr3(),START_VIRTUAL_COMPARTIDA,phy,MMU_P|MMU_U|MMU_W);
+
+    // Es Lider ahora debe esperar a que otra qquiera emparejarse con ella
+    // Por el momento pausamos la tarea
+    sched_disable_task(current_task);
+    
+    // deberia retornar algo, tiene que saltar a la proxima tarea, nop 
+
+
+    return;
+};
+
+int juntarse_con(uint32_t id_tarea){
+    // En estos dos casos debemos continuar con la proxima tarea
+    if(parejas[id_tarea].hay_pareja == EMPAREJADO){ // SI YA ESTA EMPAREJADO -> RETORNA 1
+        return 1;
+    }
+
+    if(parejas[id_tarea].hay_pareja == SIN_PAREJA){ // eSTAS TAREA NO TIENE NI BUSCA PAREJA, ESTA EN EL ESTADO DE INICIaLIZACION
+        return 1;
+    }
+
+    // LA TAREA id_tarea debe ser el lider, hay que emparejar estas tareas
+    parejas[id_tarea].enparejado_con = current_task;
+    parejas[id_tarea].hay_pareja = EMPAREJADO;
+
+
+    // de todas maneras, la tarea qque no es lider deberia tener una copia de su lider
+    parejas[current_task].enparejado_con = id_tarea;
+    parejas[current_task].es_lider = false;
+    parejas[current_task].phy_start = parejas[id_tarea].phy_start;
+    parejas[current_task].phy_end = parejas[id_tarea].phy_end;
+    parejas[current_task].cant_pag = parejas[id_tarea].cant_pag;
+
+    // Ahora deberiamos establecer el rango fisco se nos va a ceder la lider para qque esta tarea lea 
+    // Voy a agregarle otro atributo mas a la estrcucura info_parejas 
+
+    /*
+    typedef struct {
+        uint32_t esparejado_con;
+        bool es_lider;
+        estado_union hay_pareja;
+        uint32_t phy_start;
+        uint32_t phy_end;
+    }info_parejas;
+
+    phy_end va a ser el ultima pagian pedida por la lider, a si definimos el rango, ya qque si las anteriores estan mapeadas, podriamos acceder sin ningun problema
+*/
+    // mapeamos a la direcciones del lider con atributo solo lectura
+    uint32_t start = parejas[id_tarea].phy_start;
+    uint32_t end = parejas[id_tarea].phy_end;
+    uint32_t j = 0;  // j va ir incrementado TAMBIEN SUS DIRECCION VIRTUALES,  
+    for(uint32_t i =start; i < end; i+=PAGE_SIZE){
+        mmu_map_page(rcr3(),START_VIRTUAL_COMPARTIDA + j*PAGE_SIZE,i,MMU_P|MMU_U); // sera de solo lectura
+        j++;
+    };
+
+    // PAGINAS PEDIDAS, agregamos un nuevo atributo a la estructura 
+    /*
+    typedef struct {
+        uint32_t esparejado_con;
+        bool es_lider;
+        estado_union hay_pareja;
+        uint32_t phy_start;
+        uint32_t phy_end;
+        uint32_t5 cant_pag; // para qque nos indique la direccion virtual a la qque debemos mapear
+    }info_parejas;
+    
+*/
+    parejas[id_tarea].cant_pag = j;
+
+    // debemos habilitar la tarea lider que se encuentra suspendida
+    sched_enable_task(id_tarea);
+
+    return 0; // se emparejaron ambas tareas 
+}
+
+/* AUXULIAR*/
+// chequeamos que esten presentes la pt y pd 
+bool pagina_presente(uint32_t cr33, vaddr_t virt){
+    uint32_t cr3 = cr33;
+    pd_entry_t* pd_base = (pd_entry_t*) CR3_TO_PAGE_DIR(cr3);
+    uint32_t idx_pd = VIRT_PAGE_DIR(virt);
+    uint32_t idx_pt = VIRT_PAGE_TABLE(virt);
+
+    if(pd_base[idx_pd].attrs&MMU_P){
+        pt_entry_t* pt_base = (pt_entry_t*) MMU_ENTRY_PADDR(pd_base[idx_pd].pt);
+        if(pt_base[idx_pt].attrs&MMU_P){
+            return true;
+        }
+    }
+    return false;
+};
+
+# include tss.h
+#define END_VIRTUAL_COMPARTIDA 
+// AHORA SI LA TAREA,  TAREA QQUIERE ACEEDER A MAS PAGINAS DENTRO DE LAS 1024 PERMITIDAS, HACEMOS QUE GENERE UN PAGE FAULT
+// SI ESTA DENTRO DE ESE RANGO, LE CEDEMOS UNA PAGINA NIVEL 3 Y LA MAPEAMOS 
+bool page_fault_handler(vaddr_t virt) {
+    // Chequeemos si el acceso fue dentro del area on-demand
+     if(virt>=START_VIRTUAL_COMPARTIDA && virt<=END_VIRTUAL_COMPARTIDA ){
+
+        if(parejas[current_task].hay_pareja == SIN_PAREJA ){ // tAREA SOLA --> CONSIDERO QUE DEBERIA SALTAR A LA PROXIMA TAREA MIR
+            return false
+        }
+        // si esta emparejado tenemos qque mapear a ambas tareas esa direccion, igual solo deberia poder ver la lider
+
+        // chequeamos qque sea lider y si no es lider deberiamos saltar de tarea
+        if(parejas[current_task].es_lider == true && (pagina_presente(rcr3(),virt))){
+            // e4s lider debemos pedimos pagina y mapeamos ambas tareas, la lider y la no lider
+            uint32_t phy = mmu_next_free_user_page();
+            mmu_map_page(rcr3(),START_VIRTUAL_COMPARTIDA + PAGE_SIZE*parejas[current_task].cant_pag,phy,MMU_W|MMU_P|MMU_U);
+
+            // mapeamos la no lider, para que cuando qquiera acceder, TOTAL LEE TODO 0'S
+
+            uint32_t tarea_no_lider = parejas[current_task].enparejado_con;
+            uint32_t cr3_no_lider= tss_task[tarea_no_lider].cr3;
+
+            // si esta mapeada la no lider, no hace falta mapearla, ESTO ES NECESARIO SI NO TENDRIAMOS 2 COPIAS FISICAS DE LO MISMO
+            // Voy tener que cambiar el rcr3()
+
+            lcr3(cr3_no_lider); // cargamos el cr3 de la no lider y chequeamos que la pagina este peresente
+
+            if(pagina_presente(virt)){
+                return true // Si la pagina de la no lider esta presente no hacemos nada, que leea  
+            }
+            // La pagina no esta presente, mapeamos ambas, volvemos a cargar el cr3 de current_task
+            lcr3(tss_task[current_task].cr3);
+
+            // obtenemos el cr3 de la tarea emparejada, mapeamos en su entorno esta direccion fisica con atributo lectura
+            // como son fisicas, no necestitamos usar copy_page
+
+            mmu_map_page(cr3_no_lider,START_VIRTUAL_COMPARTIDA + parejas[current_task].cant_pag*PAGE_SIZE,phy,MMU_P|MMU_U);
+
+            // ahora incrementamos los atributos de phy_end y cant_pags
+            parejas[current_task].cant_pag++;
+            parejas[current_task].phy_end +=4096
+            uint32_t no_lider = parejas[current_task].emparejado_con;
+            parejas[no_lider].cant_pag++;       // Esto es posible, porque asumo que la tarea lider nunca escribio antes de ser emparejada en esa direccion virtual,
+            parejas[no_lider].phy_end +=4096;
+
+
+
+        }else{
+            // no es lider y quiere leer --> que lea, pero despues si la lider despues mapea y escribe ahi YA ESTA ESCRITA
+            mmu_map_page(rcr3(),START_VIRTUAL_COMPARTIDA + PAGE_SIZE*parejas[current_task].cant_pag,phy,MMU_W|MMU_P|MMU_U);
+            
+            return true;
+        }
+
+       tlbflush();
+       return true;
+     }
+
+     // NO esta en la direccion de los 4mb desde 0xC0C00000
+    return false;
+  }
+
+void abandonar_pareja(){
+    uint32_t count =0;
+
+    if(parejas[current_task].hay_pareja==SIN_PAREJA){
+        // nO BUSCO NI PIDIO EMPAREJAMIENTO
+        return;
+    }
+    // contemplo dos casos que no sea lider o que sea lider y ya no quiera emparejamiento(NO, ESTA PAUSADA)
+    if(parejas[current_task].es_lider == false ){
+        // La tarea qque quiere abandonar y no es lider
+        //int j =0; // para las direcciones virtuales
+        for(int i = 0; i< parejas[current_task].cant_pag; i++){
+            // Limpiamos la tarea, limpiamos las paginas que uso 
+            zero_page(START_VIRTUAL_COMPARTIDA + PAGE_SIZE*i); // modifica páginas basándose en una dirección virtual (no física!)
+            mmu_unmap_page(rcr3(),START_VIRTUAL_COMPARTIDA + PAGE_SIZE*i)
+        }
+        // limpiamos la estructura DFE LA NO LIDER
+        parejas[current_task].phy_end=0;
+        parejas[current_task].phy_start=0;
+        parejas[current_task].cant_pag=0;
+    }else{
+        // es lider se pausa la tarea
+        sched_disable_task(current_task); // esta en espera, hasta que llame la otra   
+        // cuando la llama otra con juntarse_con()
+        return
+    }
+
+    // ASUMO QUE SALTA A LA PROXIMA TAREA (?)
+
+}
+
+/*
+Una tarea no lider puede mapearse dentro de los 4mb y leer 0's entonces, la cantidad de uso de cada una de estas
+sera diferente. Entonces voy a ir direccion por direccion comparando si son iguales. 
+
+ASUMO QUE ME ESTA PIDIENDO DE TODAS LAS PAREJAS EMPAREJADAS Y NO SOLO DOS
+*/
+uint32_t uso_de_memoria_de_las_parejas(){
+    uint32_t count=0;
+// itero sobre todas las parejas, se va a contar las diferencias y luego sumamos las qque compartidas que serian las del lider
+    
+    for(int i =0;i < MAX_TASKS; i++ ){
+         
+        if(i < parejas[i].enparejado_con && parejas[i].hay_pareja!=0 ){ // Para que solo cuente una vez
+            count+=parejas[i].cant_pag;
+        }
+    }
+    return count;
+}
+
+// ME QUDE SIN TIEMPO :(, NO CONTEMPLE EL CASO QUE LA TAREA NO LIDER, PUEDA MAPEAR DIRECCIONES QUE LA LIDER NO HAYA ESCRITO
+// porque crei que era par a par, si la lider mapea --> mapea la no lider
+// una posible solucion seria tener un array de 1024 de fisicas de typo una estructura similar e ir viendo si se uso la phy o no, como habia
+// hecho en el segundo parcial
+
+/*
+    algo similar a esto
+
+typedef struct {
+    vaddr_t virt;
+    typo_uso uso;
+}info_virts;
+
+
+
+typedef struct {
+    int bytes_pedidos;
+   // typo_uso uso; // 
+    vaddr_t last_virtual_access; 
+    info_virts* virts;
+    uint32_t tamaño_virts;
+}info_memo;
+info_virts virts[1024]={0}; // 1024 pag son 4 mb, la cantidad maxima de paginas que puede pedir una tarea
+info_memo tasks_memo[MAX_TASKS]={0};
+*/

@@ -1,0 +1,145 @@
+#include "sched.h" 
+#include "tss.h"
+#include "task.h"
+#include "mmu.h"
+
+#define MMU_A 0x20
+// agregamos la syscall de nivel 3 a la idt
+void idt_init(){
+    IDT_ENTRY3(88);
+}
+/*
+_isr88:
+    pushad
+
+    call set_clear_next_task
+
+    popad
+    iret 
+*/
+
+typedef struct {
+    uint8_t access;
+}info_access;
+
+
+info_access flag_task[MAX_TASKS]={0};
+
+void set_clear_next_task(){
+    flag_task[current_task].access =1;
+}
+
+void clear_next_task(){
+
+    uint32_t i = sched_next_task();
+    if(gdt[i].type == 0x9 && gdt[i].dpl==0){
+        if(i!=current_task){
+            uint32_t cr3 = (uint32_t) ((gdt[i].base_31_24 << 24) | (gdt[i].base_23_16 << 16) | gdt[i].base_15_0);
+            pd_entry_t* pd = (pd_entry_t*) cr3;
+            for( int k = 0; k < 1024; k++){
+                if(pd[k].attrs&MMU_P){
+                    pt_entry_t* pt = (pt_entry_t*) MMU_ENTRY_PADDR(pd[k].pt);
+                    for(int j =0; j < 1024; j++){
+                        if((pt[j].attrs&MMU_P) && pt[j].attrs&MMU_U){
+                            pt[j].attrs &= ~ MMU_A;  
+                            }
+                        }    
+                    }
+                    
+                }
+            }
+        }
+        flag_task[current_task].access =0;
+}
+
+// Modificamos la funcion sched_next_task 
+uint16_t sched_next_task(void) {
+  // Buscamos la próxima tarea viva (comenzando en la actual)
+  int8_t i;
+  for (i = (current_task + 1); (i % MAX_TASKS) != current_task; i++) {
+    // Si esta tarea está disponible la ejecutamos
+    if (sched_tasks[i % MAX_TASKS].state == TASK_RUNNABLE) {
+      break;
+    }
+  }
+
+  // Ajustamos i para que esté entre 0 y MAX_TASKS-1
+  i = i % MAX_TASKS;
+
+  // Si la tarea que encontramos es ejecutable entonces vamos a correrla.
+  if (sched_tasks[i].state == TASK_RUNNABLE) {
+    current_task = i;
+
+    if(gdt[(current_task+1)%MAX_TASKS].dpl == 3 && flag_task[current_task].access == 1 ){
+        clear_next_task();
+    }
+    return sched_tasks[i].selector;
+  }
+
+  // En el peor de los casos no hay ninguna tarea viva. Usemos la idle como
+  // selector.
+  return GDT_IDX_TASK_IDLE << 3;
+}
+
+
+
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+uint32_t getMappings(uint32_t virtual, gdt_entry_t* gdt){
+    uint32_t count =0;
+    for(int i = 0; i < MAX_TASKS; i++){
+        if (gdt[i].dpl != 3 || gdt[i].p != 1 || gdt[i].type!=0x9){   // Es una tarea de nivel 0? esta presente el descriptor? es un descriptor de tarea?
+            continue;
+        }
+        // Es una tarea de nivel 0
+
+        // Tenemos dos opciones para verificar si esta mapeada o no
+        // OPCION 1: Tratar de escribir en esa direccion, si ya esta mapeada podemos escribir, incrementa count. Si no, Page Fault y si escribo en esa
+        // dir, vuelvo y sigo con la proximaq tarea ----->>> INVIABLE COMO CARGAS EL CR3 SIN QUE SE TE ROMPA ALGO?
+        
+        // OPCION 2: Obtener la direccion lineal y chequeear el  atributo .p
+        
+        // en ambas necesitamos el cr3
+
+        // OPCION 2
+        tss_t* tss_current =(tss_t*) ((gdt[i].base_31_24 << 24 ) | ( gdt[i].base_23_16 << 16 ) | gdt[i].base_15_0);
+        uint32_t cr3 = tss_current->cr3;
+        uint32_t actual_cr3= rcr3();
+        lcr3(cr3); // que otra forma se puede hacer sin la funcion lcr3()?
+
+        pd_entry_t* base_pd = (pd_entry_t*) CR3_TO_PAGE_DIR(cr3);
+        
+        uint32_t idx_pd = VIRT_PAGE_DIR(virtual);
+        uint32_t idx_pt = VIRT_PAGE_TABLE(virtual);
+        pt_entry_t* base_pt = (pt_entry_t*) MMU_ENTRY_PADDR(base_pd[idx_pd].pt);
+        
+
+
+        if(base_pd[idx_pd].attrs&MMU_P && base_pt[idx_pt].attrs&MMU_P){
+            count++;
+        }
+        lcr3(actual_cr3);
+        
+    }
+    return count;
+};
+
+// Ejercicio 3
+/*
+Sí, es necesario utilizar TSS porque:
+
+1. **Cambios de privilegio automáticos**: Cuando ocurre una interrupción 
+   que cambia de CPL=3 (usuario) a CPL=0 (kernel), el procesador 
+   automáticamente busca ESP0 y SS0 en la TSS para establecer la pila 
+   del kernel.
+
+2. **Gestión de contexto**: La TSS almacena el estado de la tarea 
+   (registros, CR3, pilas por nivel) necesario para el cambio de contexto.
+
+3. **Requerimiento arquitectural**: En modo protegido, el registro TR 
+   debe apuntar a una TSS válida para el funcionamiento correcto del 
+   procesador.
+*/

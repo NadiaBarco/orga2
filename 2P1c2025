@@ -1,0 +1,342 @@
+#include "sched.h"
+#include "tss.h"
+#include "gdt.h"
+#include "idt.h"
+#include "mmu.h"
+
+/*
+Para diseñar este sistema, tenemos quer modificar nuestra idt, ya que 
+las tareas pueden ser tanto de nivel 0 como de nivel 3. Por esto, vamos a
+agregar estas dos syscall a la idt, con los numeros 93(malloco) y 94(chau)
+*/
+
+void idt_init(){
+    IDT_ENTRY3(93);
+    IDT_ENTRY3(94);
+};
+
+/*
+Ahora vamos a crear estas interrupciones en el archivo isr.asm
+para que el procesador pueda llamarlas
+*/
+
+// Nos pasan por parametro la cabntidad de memoria que se desea reservar
+// vamos a elegir que nos pasen por parametro la cant de bytes por eax
+
+/*
+_isr93:
+    pushad
+    push eax 
+    call malloco
+    add esp, 4
+    
+    cmp eax, 0 // Se reservo memoria?
+    jne .se_reservo_memoria
+    
+    mov dword[esp + 28], eax // Devolvemos null, no hay suficiente memoria/supero los 4mb
+
+    jmp .fin
+
+    .se_reservo_memoria:
+    mov dword[esp + 28], eax    // Le pasamos la direccion a escribir
+ .fin:
+    popad
+    iret
+*/
+
+/*
+// Asumo que la dirr virtual, la pasan por eax
+_isr94:
+    pushad
+    
+    push eax
+    
+    call chau
+    add esp, 4
+    
+    popad 
+    iret
+*/
+
+// 1024 paginas == 4 mb
+
+/*
+*/
+typedef enum {
+    SIN_USO,
+    DESUSO,
+    EN_USO,
+}typo_uso;
+#define START_MEMORIA_VIRT 0xA10C0000
+
+typedef struct {
+    vaddr_t virt;
+    typo_uso uso;
+    uint32_t cant_pg;
+}info_virts;
+
+typedef struct { // estructura global, la usaremos en el archivo sched.c
+    uint32_t ticks;
+    uint32_t id;
+}run_garbage;
+
+run_garbage tarea0;
+
+
+typedef struct {
+    int bytes_pedidos;
+   // typo_uso uso; // 
+    vaddr_t last_virtual_access; 
+    info_virts* virts;
+    uint32_t tamaño_virts;
+}info_memo;
+
+info_virts virts[1024]={0}; // 1024 pag son 4 mb, la cantidad maxima de paginas que puede pedir una tarea
+info_memo tasks_memo[MAX_TASKS]={0};
+
+
+/*
+La funcion malloco se maneja con el array task_memo, task_memo va a contener los bytes pedidos totales
+ya que si se pasa de las 1024 paginas, no deberiamos darlas. last_virtual_access lo usaremos para que nos de la proxima direcccion virtual
+ de manera contigua por cada tarea. Luego el atributo info_virts sera un array de las psobiles(1024) direcciones virtuales
+ que una tarea nos pueda pedir y si la misma esta en uso/desuso o sin_uso. 
+ el tamaño_virts es para definir la longitud de l array, Cada que la tarea pide memoria, la longitud va creciendo hasta los 1024 que es la capacidad de 
+ entradas. 
+*/
+
+
+/*
+Malloco lo que hara es chequear si los bytes requeridos superan las 1024 paginas,si lo supera es no hara nada. Si no lo es 
+vamos a pedir reservarla, aunque si no accedemos a esa direccion,nno se mapearan. 
+Si esta dentro de las 1024 paginas los bytes entonces se lo asignamos en una posicion continua,
+si la marca como sin_uso/reservada, incrementamos los bytes_totales, la direccion virtual continua y la longitud del array
+y retonara la pagina donde se debe empezar a escribir/leer
+*/
+
+void* malloco(uint32_t bytes_req){
+    uint32_t total_bytes = tasks_memo[current_task].bytes_pedidos;
+    total_bytes += bytes_req;
+    uint32_t total_paginas = total_bytes / 4096 + if(total_bytes%4096 > 1) return 1;
+    // una pagina == 4096; total_bytes/ 4096 pero, si nos queda resto al menos un byte deberiamos pedir otra pagina 
+    // entonces (total_bytes // 4096 ) + if (total_bytes % 4096) return 1; 
+    
+    if(total_paginas > 1024){ // Es mayor a 4mb?
+        return 0;
+    };
+    uint32_t tamaño = tasks_memo[current_task].tamaño_virts;
+    // Esta tarea puede seguir pidiendo memoria, le asignamos lo pedido
+    tasks_memo[current_task].virts[tamaño].uso= SIN_USO;     // esta nueva direccion no fue asignada// solo la estamos pidiendo
+
+    // pagina_a_reservar tendra la proxima pagina baja 
+    vaddr_t pagina_a_reservar = tasks_memo[current_task].last_virtual_access;
+    uint32_t res = pagina_a_reservar;
+    // Vamos a ingresar cada pagina pedida en bytes en el array
+    int pag_req = bytes_req / 4096;
+    pag_req += (bytes_req%4096 == 1) ? 1 : 0; 
+
+    info_virts* virtuales = tasks_memo[current_task].virts;
+    for(int pag=0; pag<pag_req; pag++){
+        virtuales[tamaño+ pag].virt=pagina_a_reservar;
+        pagina_a_reservar+=4096;
+
+        virtuales[tamaño + pag].uso=SIN_USO;
+        virtuales[tamaño + pag].cant_pg = pag_req;
+
+    }
+
+
+    tasks_memo[current_task].last_virtual_access+= bytes_req; 
+    tasks_memo[current_task].bytes_pedidos +=bytes_req;
+    
+    tasks_memo[current_task].tamaño_virts+=pag_req;
+    info_virts* reservas = tasks_memo[current_task].virts;
+    reservas
+    return (void*)res;
+
+};
+
+
+
+/*
+chau chequera la direcciones virtual pasada por parametro que esten dentro del rango pedido por la tarea
+y lo pondra en modo desuso 
+*/
+void chau(void* ptr){
+    vaddr_t dir_virt = (vaddr_t) ptr;
+    if(ptr >=START_MEMORIA_VIRT && ptr <= START_MEMORIA_VIRT + tasks_memo[current_task].bytes_pedidos){ // DIRECCION MAS BAJA START_MEMORIA_VIRT, DESDE AHI EMPIEZAN A PEDIR PAGINAS
+        info_virts* virtuales= tasks_memo[current_task].virts;
+        for(int j=0; j < 1024; j++){
+           if( virtuales[j].virt == ptr){
+                int cant_pag = virtuales[j].cant_pg;
+                for(int cnt=0; cnt < cant_pag;cnt++){
+                    virtuales[j+cnt].uso= DESUSO;  // tIENE QUE PASAR EL GARBAGE COLLECTOR
+
+                }
+            return;
+            };
+        }
+    } 
+    return;
+}
+
+
+/*
+Ahora, solo indicamos que queremos esos bytes pero no que lo vamos a usar, cuando intentemos
+escribir en la pagina(que no esta mapeada) nos genera un page fault. Eso nos va
+a indicar que la tarea quiere escibir en ella. Por esto, si la tarea quiera escibir/leer en un rango de memoria que pidio, se
+le asignamos la direccion fisica del area libre de tareas, esta la podemos obtener mediante la funcion,hecha en el tp
+voy a reciclar mmu_next_free_user_page() ya que empieza con la dir fisica 0x400000 y se utilizo, entonce no va a pisar la pila del nivel 3 del tp
+
+
+Se genera el page fault, salta a la isr14, se llama al handler del page fault con la dir viartual
+que se intenta acceder. vAMOS a modificar el handler parta que si se llega a escribir en una direccion 
+pedida por la tarea, esta se mapee   
+*/
+
+bool page_fault_handler(vaddr_t virt){
+  // por si tiene un offset valido, tiene que ser multiplo de 4k
+  vaddr_t virtual= (vaddr_t) virt & 0xFFFFF000;
+
+  info_virts* reservas = tasks_memo[current_task].virts;
+  
+  // Buscamos si esa pagina esta dentro de nuestras reservas
+  uint32_t tamaño_total = tasks_memo[current_task].tamaño_virts;     // total de paginas reservadas del array
+  for(int idx=0; idx < tamaño_total; idx++){
+    if (reservas[idx].virt == virtual && reservas[idx].uso== SIN_USO){  // Esta virt en las reservas y inicializada?
+        paddr_t nueva_pagina= mmu_next_free_user_page();
+        
+        // Usamos zero_page, para esto modificamos la variable que pide que sea static
+        zero_page(nueva_pagina); // Limpiamos las paginas fisicas pedidas
+        mmu_map_page(rcr3(),virt /*+ c_pag*4096*/, nueva_pagina, MMU_W | MMU_P | MMU_U);
+        reservas[idx].uso = EN_USO;
+        tlbflush();
+        return true;
+    }
+  }
+  // NO SE ENCONTRO LA DIRECCION VIRTUAL EN LAS RESERVAS
+  print("PAGE FAULT!", 0, 45, 0xA);
+  // Castigamos a la tarea, la deshabilitamos del sched y todas las paginas que pidio, quedan fuera, en desuso para que pase el garballe collector
+  info_virts* virtuales = tasks_memo[current_task].virts;
+  for(int j=0; j < 1024; j++){
+    virtuales[j].uso = DESUSO;
+  }
+
+  sched_disable_task(current_task);
+  return false;
+}
+
+// Modificamos la isr14, cuando el handler devuelva false, iremos a la proxima tarea
+_isr14:
+    pushad                          ; Guardar registros
+    mov eax, cr2                    ; Obtener dirección del fault
+    push eax
+    call page_fault_handler
+     ;pop eax
+    add esp, 4                      ; Limpiar parámetro
+    
+     ; Se escribio en la on demand?
+    cmp al, 0
+    jz .ring0_exception 
+    jmp .fin
+    
+     ;No es una direccion reservada - PAGE FAULT -> saltamos a la prox tarea
+    .ring0_exception:
+//Ahora cuando se accedio a una direccion no reservada, debemos saltar a la proxima tarea, actualizamos el current_task
+
+        call sched_next_task   ; printea todos los registros
+        cmp ax, 0
+        je .fin
+
+        str bx
+        cmp ax, bx
+        je .fin
+
+        mov word [sched_task_selector], ax
+        jmp far [sched_task_offset]
+
+    .fin:
+        popad                           ; Restaurar registros
+        add esp, 4                      ; ← ¡LIMPIAR EL ERROR CODE!
+        iret                            ; Ahora el stack está correcto
+
+
+//------------------- TAREA GARBAGE--------
+/* 
+En esta punto, cree el la estructura info_virts(YA MODIFICADO PARA QUE RESPETE AL NUEVO ATRIBUTO) esta va a tener informacion de cada direccion virtual pedida
+si esta en uso, desuso o sin_uso que es la intancia cuando pedimos esa pagina, ya que si la tenemos en desuso
+la direccion ira  directo al garbage collector. ESte proceso, lo que hara sera, de cada tarea que este definida en la estructura
+info_memo y tenga el tag de DESUSO, desmapearemos la pagina, en el caso que este con el tag sin_uso no haremos nada 
+ya que esparemos a que la tarea intente escribir ahi
+
+*/
+
+paddr_t tarea_garbage={0};
+void garbage_collector2puntozero(){
+    for(int i = 0; i < MAX_TASKS; i++){
+        info_virts* virt_pedidas= tasks_memo[i].virts;
+
+        for( int j= 0; j < 1024; j++){
+
+            if(virt_pedidas[j].uso == DESUSO){
+        
+                uint32_t cr3_i = tss_tasks[i].cr3;
+
+                mmu_unmap_page(cr3_i,virt_pedidas[j].virt);
+                tblflush();
+            }
+        }
+    }
+    tarea0.ticks=0;
+    sched_disable_task(current_task);
+};
+
+
+// Para esta tarea tenemos que agregar un descriptor de tss para la tarea del garbage_collector
+// Buscamos un slot libre en la gdt, obtenemos un id desde el selector de segmento
+// una vez hecho eso podemos modificar la funcion sched_next_task para que retorne el selector de
+
+
+
+// Este proceso esta dentro de una tarea de nivel 0, para usarla debemos definirla en la gdt con 
+// los atributos mas bajos, dpl=0, segmento de codigo de nivel 0, un directorio de paginas y tablas de pagina con
+// attrs de kernel, presente. pedir paginas dentro de identity mapping
+// cREAR LA tss de esta tarea, como esta es de nivel 0, definir direcciones con identity mapping
+// ademas debemos meterla scheduler, PARA QUE corra y puede ejecutarse el proceso
+
+
+// Agregamos la modificacion para que la tarea ocurra a los 1000 ticks
+
+
+uint16_t sched_next_task(void) {
+  // Buscamos la próxima tarea viva (comenzando en la actual)
+  int8_t i;
+// Incrementamos tarea0.ticks cada que se pida un cambio de tarea 
+  tarea0.ticks++;
+  if(tarea0.ticks == 100){
+        sched_enable_task(tarea0.id);
+    current_task = tarea0.id;
+    return sched_tasks[tarea0.id].selector;
+  }
+
+  for (i = (current_task + 1); (i % MAX_TASKS) != current_task; i++) {
+    // Si esta tarea está disponible la ejecutamos
+    if (sched_tasks[i % MAX_TASKS].state == TASK_RUNNABLE) {
+      break;
+    }
+  }
+
+  // Ajustamos i para que esté entre 0 y MAX_TASKS-1
+  i = i % MAX_TASKS;
+
+
+  // Si la tarea que encontramos es ejecutable entonces vamos a correrla.
+  if (sched_tasks[i].state == TASK_RUNNABLE) {
+    current_task = i;
+
+    return sched_tasks[i].selector;
+  }
+
+  // En el peor de los casos no hay ninguna tarea viva. Usemos la idle como
+  // selector.
+  return GDT_IDX_TASK_IDLE << 3;
+}
