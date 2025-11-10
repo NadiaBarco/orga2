@@ -2,12 +2,8 @@
 #include "task.h"
 #include "tss.h"
 #include "sched.h"
-/*    task_id pareja_de_actual(): si la tarea actual está en pareja devuelve el task_id de su pareja, o devuelve 0 si la tarea actual no está en pareja.
-    bool es_lider(task_id tarea): indica si la tarea pasada por parámetro es lider o no.
-    bool aceptando_pareja(task_id tarea): si la tarea pasada por parámetro está en un estado que le permita formar pareja devuelve 1, si no devuelve 0.
-    void conformar_pareja(task_id tarea): informa al sistema que la tarea actual y la pasada por parámetro deben ser emparejadas. Al pasar 0 por parámetro, se indica al sistema que la tarea actual está disponible para ser emparejada.
-    void romper_pareja(): indica al sistema que la tarea actual ya no pertenece a su pareja actual. Si la tarea actual no estaba en pareja, no tiene efecto.
-
+#include "mmu.h"
+/*  
 El mecanismo que usamos para invocar estas sycall van a ser mediante interrupciones de
 software, por comodidad voy a usar las 91,92 y 93, vamos a introducir estas interrupciones a 
 la idt, vamos a decir que estas syscalls reciben sus parametros a traves de los registros de
@@ -24,6 +20,42 @@ idt_init(){
     IDT_ENTRY3(93); // para invocar abandonar_pareja
 }
 
+
+// Implementamos y las instanciamos en isr.asm
+
+_isr91:
+    push ebp
+    mov ebp, esp
+
+    call crear_pareja
+
+
+    pop ebp
+    iret
+_isr92: 
+    push ebp
+    mov ebp, esp
+    
+    ; pasamos por el stack el id de la tarea lider, vamos a asumir que se encuentra en edi 
+    ; pusheamos edi
+    push edi 
+    call juntarse_con
+    add esp, 4
+    ;devuelve el valor en eax, la tarea evaluara que hacer...
+
+
+    pop ebp
+    iret
+
+_isr93:
+    push ebp
+    mov ebp, esp 
+
+    call abandonar_pareja
+
+    pop ebp 
+    iret 
+
 //implementamos las syscalls
 // Antes de implementarlas, tneemos que armar la estructura de las parejas, el sistema de emparejamineto
 // Tenemos que tener en cuenta:
@@ -38,15 +70,16 @@ idt_init(){
     deben siempre observar la misma memoria física.
     Sólo la tarea que crea una pareja puede escribir en los 4MB a partir de 0xC0C00000.
     Cuando una tarea abandona su pareja pierde acceso a los 4MB a partir de 0xC0C00000.
-    */
+*/
 
 #define START_SHARED_MEMORY 0xC0C00000
-#define END_SHARED_MEMORY 0xC0C00000 + 1024*PAGE_SIZE
+#define END_SHARED_MEMORY 0xC0C00000 + 1024*PAGE_SIZE // 4MB SON 1024 PAGINAS DE 4096 BYTES
 typedef struct {
     estado_pareja_t estado;
     bool es_lider;
     uint16_t es_pareja_de;
-    vaddr_t pagina_disp=START_SHARED_MEMORY;
+    vaddr_t pagina_disp;
+    uint32_t paginas_usadas;
 }parejas;
 
 typedef enum {
@@ -55,7 +88,7 @@ typedef enum {
     EN_PAREJA,
 }estado_pareja_t;
 
-parejas info_parejas[MAX_TASKS]={0};
+parejas info_parejas[MAX_TASKS*2]={0};
 
 // La tarea actual traves de la interupcion 91 llama a crear_pareja
 // Consultamos si ya perteneces a una pareja
@@ -63,10 +96,127 @@ void crear_pareja(){
     if (!pareja_de_actual()){
         info_parejas[current_task].estado = BUSCANDO_PAREJA;
         info_parejas[current_task].es_lider = true;
-        
+        info_parejas[current_task].es_pareja_de=0;
+        info_parejas[current_task].pagina_disp = START_SHARED_MEMORY;
         sched_disable_task(current_task); // Hasta que la otra tarea no se una 
         return;
     }
     return;
     
 }
+
+int juntarse_con(int id_tarea){
+    // consultamos si ya pertenece a una pareja
+    if(info_parejas[id_tarea].estado==EN_PAREJA){
+        return 1;
+    }
+    if(info_parejas[id_tarea].estado==SIN_PAREJA){
+        return 1
+    }; // Es necesario este caso? si no estuviera creado SIN_PAREJA que esperaria? como sabemos que
+
+    // CASO QUE id_tarea esta buscando pareja
+
+    // seteamos la info de de la tarea actual
+    info_parejas[current_task].estado=EN_PAREJA;
+    info_parejas[current_task].es_lider=false;
+    info_parejas[current_task].es_pareja_de=id_tarea;
+
+    // actualizamos la info de la tarea lider
+    info_parejas[id_tarea].estado=EN_PAREJA;
+    info_parejas[id_tarea].es_pareja_de=current_task;
+
+    //Le indicamos la posicion de memoria asignado
+    info_parejas[current_task].pagina_disp=info_parejas[id_tarea].pagina_disp;
+    
+    //habilitamos la tarea lider que estaba pausada
+    sched_enable_task(id_tarea);
+
+    return 0; 
+}
+
+// La tarea actual es que llamo a esta syscall
+int abandonar_pareja(){
+
+    // Esta tarea no esta viinculada a ninguna pareja
+    if(!info_parejas[current_task].estado==SIN_PAREJA){
+        return;
+    }
+
+    // Solo deshabilitamos la tarea 
+    if(info_parejas[current_task].es_lider){
+        sched_disable_task(current_task)
+        return;
+    }
+
+    // Deshabilitamos, la tarea no lider Y LIMPIAMOS LA LIDER, YA QUE ROMPIMOS LA PAREJA
+    uint8_t id_lider =info_parejas[current_task].es_pareja_de;
+    info_parejas[current_task].pagina_disp=0;
+    info_parejas[current_task].estado=SIN_PAREJA;
+    info_parejas[current_task].es_pareja_de=0;
+    info_parejas[current_task].paginas_en_uso=0;
+    // DEBERIAMOS HACER UN ZERO PAGE A LAS PAGINAS UTILIZADAS
+    vaddr_t ultima_page_uitlizada= info_parejas[current_task].pagina_disp;
+
+    for (size_t i = START_SHARED_MEMORY; i  < ultima_page_uitlizada; i+PAGE_SIZE){
+        zero_page(i) // zero_page para virtuales
+    };
+    
+}
+
+
+
+// COMO ES BAJO DEMANDA, LA FORMA QUE TENEMO DE "CONTABILIZAR" LAS PAGINAS EN USO DE LA PAREJA 
+//LIDER  ES A TRAVES DE EL HANDLER DE (SYSCALL) page_fault_handler(), entonces cuando 
+// la lider intente escribir dentro del rango [STAR_SHARED_MEMORY, END_SHARED_MEMORY]
+bool page_fault_handler(vaddr_t virt) {
+  // Chequeemos si el acceso fue dentro del la shared
+   if(virt>=START_SHARED_MEMORY && virt<=END_SHARED_MEMORY){
+    // SOLO CUANDO ESTAN EN PAREJA SE CEDEN LOS 4MB, SE LOS VAMOS A CEDER A AMBOS
+    // SI LO CEDEN A LA LIDER ENTONCES SE LO CEDEN A NO-LIDER
+    uint8_t es_lider= info_parejas[current_task].eslider;
+    uint8_t estado = info_parejas[current_task].estado;
+    // Ultima pagina usada, por default esta inicializada en la START
+    vaddr_t ultima_page= info_parejas[current_task].pagina_disp;
+    // pedimos una pagina del kernel para mapear la virtual
+    uint32_t page_fisica= mmu_next_free_kernel_page();
+    if(es_lider && estado==EN_PAREJA){
+        
+        //mapeada para la lider
+        mmu_map_page(rcr3(),ultima_page,page_fisica,MMU_W|MMU_P);
+        info_parejas[current_task].paginas_en_uso+=1;
+        info_parejas[current_task].pagina_disp+=4096;
+
+        // Hay que insertar esta direccion en el entorno de la no lider
+        uint32_t cr3_nolider = tss_tasks[info_parejas[current_task].es_pareja_de].cr3;
+        mmu_map_page(cr3_nolider,ultima_page,page_fisica,MMU_P);
+        info_parejas[info_parejas[current_task].es_pareja_de].paginas_en_uso+=1;
+        info_parejas[info_parejas[current_task].es_pareja_de].pagina_disp+=4096;
+     }
+     print("SE ATENDIO EL PAGE FAULT",0,44,0xA);
+     tlbflush();
+     return true;
+   }
+  print("NO SE ATENDIO EL PAGE FAULT!",0,45,0xA);
+  return false;
+}
+
+
+
+// ejercicio 2
+uint32_t uso_de_memoria_de_las_parejas(){
+    return info_parejas[current_task].paginas_en_uso;
+}
+
+
+
+// Debemos asumir que que cuando ocurre el caso de que la tarea ya pertenece
+// a una pareja, que se refiere con el "retorna de inmediato"
+
+// en juntarse_con devuelve un valor, ese valor, espero que la tarea llamadora la maneje, nbo deberiamos hacer nada
+
+// SOLO NOS CEDEN LOS 4MB SI SE CONFORMA UNA PAREJA?
+
+// CEDER A LA NO LIDER CUANDO LA LIDER PIDE PAGINAS?
+
+// SI LA NO LIDER QUIERE LEER FUERA DE LA MEMORIA COMPARTIDA -> PAGE FAULT
+// SI LA LIDER QUIERE LEE DENTRO DE LA MEM-SHARED SE LE DA PERMISOS DE ESCRITURAS?
